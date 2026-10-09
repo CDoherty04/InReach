@@ -1,5 +1,4 @@
 import Link from 'next/link'
-import { DEMO } from '@/lib/plan'
 
 export function Header() {
   return (
@@ -9,8 +8,7 @@ export function Header() {
       </Link>
       <nav>
         <Link href="/doctor">Doctor</Link>
-        <Link href={`/p/${DEMO.id}`}>Caregiver</Link>
-        <Link href={`/sms?patient=${DEMO.id}`}>Messages</Link>
+        <Link href="/sms">Messages</Link>
       </nav>
     </header>
   )

@@ -3,18 +3,13 @@ import type { Db } from 'mongodb'
 import { baseUrl, getDb } from '@/lib/db'
 import {
   ANNUAL_RATE_CENTS,
-  DEMO,
-  SAMPLE_NOTE,
-  buildSummary,
   buildTasks,
   cardError,
   defaultPrefs,
-  demoDischargeAt,
   englishSms,
   formatStamp,
   formatWhen,
   isPatientId,
-  parseDischarge,
   patientPath,
   presentTask,
   sanitizePrefs,
@@ -67,7 +62,6 @@ type PatientDoc = {
   dischargeAt: Date | null
   prefs: Prefs
   telegramChatIds?: string[]
-  seedComplete?: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -228,99 +222,6 @@ function recipients(patient: PatientDoc): string[] {
   return phones
 }
 
-async function wipeDemo(db: Db) {
-  await patientCol(db).deleteOne({ _id: DEMO.id })
-  await taskCol(db).deleteMany({ patientId: DEMO.id })
-  await messageCol(db).deleteMany({ patientId: DEMO.id })
-  await orderCol(db).deleteOne({ _id: subscriptionOrderId(DEMO.hospitalName) })
-}
-
-async function seedIfNeeded(db: Db) {
-  const existing = await patientCol(db).findOne({ _id: DEMO.id })
-  if (existing?.seedComplete) return
-
-  const lock = await metaCol(db).updateOne(
-    { _id: 'seed-jordan' },
-    { $setOnInsert: { at: new Date() } },
-    { upsert: true },
-  )
-  if (lock.upsertedCount !== 1) {
-    for (let attempt = 0; attempt < 50; attempt += 1) {
-      const row = await patientCol(db).findOne({ _id: DEMO.id })
-      if (row?.seedComplete) return
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-    const row = await patientCol(db).findOne({ _id: DEMO.id })
-    if (row?.seedComplete) return
-    throw new Error('Demo chart did not finish loading.')
-  }
-
-  try {
-    await wipeDemo(db)
-    const parsed = parseDischarge(SAMPLE_NOTE)
-    if (parsed.error || parsed.medications.length < 1) throw new Error(parsed.error || 'Sample note did not parse.')
-    const dischargeAt = demoDischargeAt()
-    const summary = buildSummary({
-      name: DEMO.name,
-      city: DEMO.city,
-      doctorName: DEMO.doctorName,
-      caregiverName: DEMO.caregiverName,
-      medications: parsed.medications,
-      physicalTherapy: parsed.physicalTherapy,
-      equipment: parsed.equipment,
-    })
-    const now = new Date()
-    await patientCol(db).insertOne({
-      _id: DEMO.id,
-      name: DEMO.name,
-      phone: DEMO.phone,
-      caregiverName: DEMO.caregiverName,
-      caregiverPhone: DEMO.caregiverPhone,
-      doctorName: DEMO.doctorName,
-      hospitalName: DEMO.hospitalName,
-      city: DEMO.city,
-      scenario: DEMO.scenario,
-      dischargeNote: SAMPLE_NOTE,
-      summary,
-      medications: parsed.medications,
-      physicalTherapy: parsed.physicalTherapy,
-      equipment: parsed.equipment,
-      status: 'active',
-      dischargeAt,
-      prefs: defaultPrefs(),
-      seedComplete: false,
-      createdAt: now,
-      updatedAt: now,
-    })
-    const drafts = buildTasks({
-      patientId: DEMO.id,
-      patientName: DEMO.name,
-      doctorName: DEMO.doctorName,
-      medications: parsed.medications,
-      dischargeAt,
-    })
-    if (drafts.length) await taskCol(db).insertMany(drafts.map(toTaskDoc))
-    await orderCol(db).insertOne({
-      _id: subscriptionOrderId(DEMO.hospitalName),
-      patientId: slugify(DEMO.hospitalName),
-      patientName: DEMO.hospitalName,
-      hospitalName: DEMO.hospitalName,
-      description: SUBSCRIPTION_DESCRIPTION,
-      amountCents: ANNUAL_RATE_CENTS,
-      status: 'pending',
-      method: null,
-      last4: null,
-      createdAt: now,
-      paidAt: null,
-    })
-    await patientCol(db).updateOne({ _id: DEMO.id }, { $set: { seedComplete: true } })
-  } catch (error) {
-    await wipeDemo(db)
-    await metaCol(db).deleteOne({ _id: 'seed-jordan' })
-    throw error
-  }
-}
-
 export async function dispatchDue(db: Db, forceId?: string) {
   const now = new Date()
   const due = await taskCol(db).find({ sentAt: null, scheduledFor: { $lte: now } }).toArray()
@@ -343,8 +244,9 @@ export async function dispatchDue(db: Db, forceId?: string) {
     const rankB = patientB ? medRank(patientB, b.medName) : 0
     return rankB - rankA
   })
-  for (let index = 0; index < due.length; index += 1) {
-    const task = due[index]
+  const batch = forceId ? due.filter((task) => task._id === forceId).slice(0, 1) : due.slice(0, 1)
+  for (let index = 0; index < batch.length; index += 1) {
+    const task = batch[index]
     const patient = patientsById.get(task.patientId)
     if (!patient || patient.status !== 'active') continue
     const sentAt = new Date(now.getTime() + index)
@@ -390,7 +292,6 @@ export async function ready(): Promise<Db> {
     await orderCol(db).createIndex({ patientId: 1 })
     globalForApp.__seventyTwoIndexed = true
   }
-  await seedIfNeeded(db)
   await syncTelegramWebhook()
   if (telegramPollingMode()) await pollTelegramUpdates(linkTelegramChat, rememberDemoTelegramChat)
   await dispatchDue(db)
@@ -542,7 +443,7 @@ export async function savePatient(input: SavePatientInput): Promise<{ error: str
         prefs: existing?.prefs ?? defaultPrefs(),
         updatedAt: now,
       },
-      $setOnInsert: { createdAt: now, seedComplete: true },
+      $setOnInsert: { createdAt: now },
     },
     { upsert: true },
   )
@@ -561,7 +462,6 @@ export async function savePatient(input: SavePatientInput): Promise<{ error: str
 export async function listPatients(): Promise<PatientListItem[]> {
   const db = await ready()
   const rows = await patientCol(db).find({}).sort({ updatedAt: -1 }).toArray()
-  rows.sort((a, b) => (a._id === DEMO.id ? -1 : b._id === DEMO.id ? 1 : 0))
   return rows.map((patient) => ({
     id: patient._id,
     name: patient.name,
@@ -688,7 +588,7 @@ export async function listThreads(focusId?: string): Promise<ThreadView[]> {
       scheduled,
     })
   }
-  threads.sort((a, b) => (a.patientId === DEMO.id ? -1 : b.patientId === DEMO.id ? 1 : a.patientName.localeCompare(b.patientName)))
+  threads.sort((a, b) => a.patientName.localeCompare(b.patientName))
   if (focusId && isPatientId(focusId)) {
     threads.sort((a, b) => (a.patientId === focusId ? -1 : b.patientId === focusId ? 1 : 0))
   }

@@ -4,7 +4,7 @@ import { sendNextAction } from '@/app/actions'
 import { Header } from '@/components/Header'
 import { PlanEditor } from '@/components/PlanEditor'
 import { SubmitButton } from '@/components/SubmitButton'
-import { DEMO, patientPath } from '@/lib/plan'
+import { patientPath } from '@/lib/plan'
 import { getDoctorPatient } from '@/lib/store'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -24,7 +24,6 @@ export default async function DoctorPatientPage({
   const query = await searchParams
   const patient = await getDoctorPatient(id)
   if (!patient) notFound()
-  const isDemo = patient.id === DEMO.id
 
   return (
     <main className="wrap">
@@ -32,7 +31,7 @@ export default async function DoctorPatientPage({
       <div className="stack">
         <p className="eyebrow">{patient.status === 'active' ? 'Active chart' : 'Draft'}</p>
         <h1>{patient.fields.name}</h1>
-        {patient.scenario && !isDemo ? <p>{patient.scenario}</p> : null}
+        {patient.scenario ? <p>{patient.scenario}</p> : null}
         <p className="row">
           <Link className="btn primary" href={patientPath(patient.id)}>
             Caregiver page
@@ -40,7 +39,7 @@ export default async function DoctorPatientPage({
           <Link className="btn" href={`/sms?patient=${patient.id}`}>
             Messages
           </Link>
-          {id !== DEMO.id ? <Link href="/doctor">All charts</Link> : null}
+          <Link href="/doctor">All charts</Link>
         </p>
         {query.error ? (
           <p className="error" role="alert">
@@ -61,14 +60,7 @@ export default async function DoctorPatientPage({
             )}
           </section>
         ) : null}
-        {patient.status === 'active' && isDemo ? (
-          <details>
-            <summary className="btn">Edit discharge (optional)</summary>
-            <PlanEditor id={patient.id} status={patient.status} fields={patient.fields} />
-          </details>
-        ) : (
-          <PlanEditor id={patient.id} status={patient.status} fields={patient.fields} />
-        )}
+        <PlanEditor id={patient.id} status={patient.status} fields={patient.fields} />
       </div>
     </main>
   )

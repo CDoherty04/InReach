@@ -8,36 +8,6 @@ export const GRANTS = [
   { href: 'https://www.needymeds.org/', label: 'NeedyMeds' },
 ] as const
 
-export const DEMO = {
-  id: 'jordan-ellis',
-  name: 'Jordan Ellis',
-  phone: '6205550142',
-  caregiverName: 'Morgan Ellis',
-  caregiverPhone: '6205550199',
-  doctorName: 'Dr. Elena Vasquez',
-  hospitalName: 'Plains Regional Hospital',
-  city: 'Great Bend, Kansas',
-  scenario:
-    "Adia's cousin: paralyzed after a car crash in rural Kansas, transferred between hospitals, now home.",
-}
-
-export const SAMPLE_NOTE = `Jordan Ellis
-Rural Kansas. Paralyzed after a car crash. Transferred between hospitals before discharge home to Great Bend.
-
-Medications
-- Ibuprofen | 600 mg | qty 1 | every 8 hours | 7 days
-- Acetaminophen | 500 mg | qty 2 | every 6 hours | 5 days
-- Enoxaparin | 40 mg | qty 1 | every 24 hours | 14 days
-
-Physical therapy
-Passive range of motion twice a day. No independent transfers. Family repositions Jordan every 2 hours.
-
-Equipment
-- Wheelchair, 18 inch
-- Pressure-relief cushion
-- Hospital bed with rails
-`
-
 const CLOCK: Record<number, number[]> = {
   1: [8],
   2: [8, 20],
@@ -199,7 +169,7 @@ function weekdayIndex(year: number, month: number, day: number): number {
   return new Date(Date.UTC(year, month - 1, day)).getUTCDay()
 }
 
-export function demoDischargeAt(now = new Date()): Date {
+export function dischargeMorningAnchor(now = new Date()): Date {
   const parts = chicagoParts(now)
   let discharge = utcFromChicago(parts.year, parts.month, parts.day, 7, 0)
   if (discharge.getTime() > now.getTime()) {

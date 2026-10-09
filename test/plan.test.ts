@@ -5,13 +5,11 @@ import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
   ANNUAL_RATE_CENTS,
-  DEMO,
-  SAMPLE_NOTE,
   answerQuestion,
   buildTasks,
   cardError,
   clockPreview,
-  demoDischargeAt,
+  dischargeMorningAnchor,
   doseInstants,
   englishSms,
   formatMoney,
@@ -25,6 +23,20 @@ import {
   validatePlan,
   volumeEstimate,
 } from '../lib/plan'
+
+const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
+const sampleNote = readFileSync(join(fixturesDir, 'sample-note.txt'), 'utf8')
+
+const samplePatient = {
+  id: 'jordan-ellis',
+  name: 'Jordan Ellis',
+  phone: '6205550142',
+  caregiverName: 'Morgan Ellis',
+  caregiverPhone: '6205550199',
+  doctorName: 'Dr. Elena Vasquez',
+  hospitalName: 'Plains Regional Hospital',
+  city: 'Great Bend, Kansas',
+}
 
 const eightPm = utcFromChicago(2026, 10, 9, 20, 0)
 
@@ -45,18 +57,18 @@ describe('schedule', () => {
     assert.equal(clockPreview(3), '8:00 AM, 2:00 PM, and 8:00 PM')
   })
 
-  it('anchors the demo discharge at 7 AM Central the same morning', () => {
+  it('anchors discharge at 7 AM Central the same morning', () => {
     const now = new Date('2026-10-09T16:00:00.000Z')
-    assert.equal(demoDischargeAt(now).toISOString(), utcFromChicago(2026, 10, 9, 7, 0).toISOString())
+    assert.equal(dischargeMorningAnchor(now).toISOString(), utcFromChicago(2026, 10, 9, 7, 0).toISOString())
   })
 
   it('builds one verify task plus doses for the sample medications', () => {
-    const parsed = parseDischarge(SAMPLE_NOTE)
+    const parsed = parseDischarge(sampleNote)
     const discharge = utcFromChicago(2026, 10, 9, 7, 0)
     const tasks = buildTasks({
-      patientId: DEMO.id,
-      patientName: DEMO.name,
-      doctorName: DEMO.doctorName,
+      patientId: samplePatient.id,
+      patientName: samplePatient.name,
+      doctorName: samplePatient.doctorName,
       medications: parsed.medications,
       dischargeAt: discharge,
     })
@@ -73,7 +85,7 @@ describe('schedule', () => {
 
 describe('parser', () => {
   it('reads the sample discharge note', () => {
-    const parsed = parseDischarge(SAMPLE_NOTE)
+    const parsed = parseDischarge(sampleNote)
     assert.equal(parsed.error, undefined)
     assert.deepEqual(parsed.warnings, [])
     assert.deepEqual(
@@ -89,7 +101,7 @@ describe('parser', () => {
   })
 
   it('reads a narrative discharge chart like Michael Carter', () => {
-    const note = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures/michael-carter.txt'), 'utf8')
+    const note = readFileSync(join(fixturesDir, 'michael-carter.txt'), 'utf8')
     const parsed = parseDischarge(note)
     assert.equal(parsed.error, undefined)
     assert.equal(parsed.name, 'Michael Carter')
@@ -113,12 +125,12 @@ describe('parser', () => {
 
 describe('texts and payments', () => {
   it('points each text at that patient page', () => {
-    const href = `http://localhost:3000${patientPath(DEMO.id)}`
+    const href = `http://localhost:3000${patientPath(samplePatient.id)}`
     const body = englishSms({
-      caregiverName: DEMO.caregiverName,
-      patientName: DEMO.name,
-      doctorName: DEMO.doctorName,
-      hospitalName: DEMO.hospitalName,
+      caregiverName: samplePatient.caregiverName,
+      patientName: samplePatient.name,
+      doctorName: samplePatient.doctorName,
+      hospitalName: samplePatient.hospitalName,
       kind: 'med',
       medName: 'Ibuprofen',
       href,
@@ -145,12 +157,12 @@ describe('texts and payments', () => {
 
 describe('chart assistant', () => {
   it('answers from the medication on the chart', () => {
-    const parsed = parseDischarge(SAMPLE_NOTE)
+    const parsed = parseDischarge(sampleNote)
     const answer = answerQuestion('when is ibuprofen?', {
-      name: DEMO.name,
-      caregiverName: DEMO.caregiverName,
-      doctorName: DEMO.doctorName,
-      hospitalName: DEMO.hospitalName,
+      name: samplePatient.name,
+      caregiverName: samplePatient.caregiverName,
+      doctorName: samplePatient.doctorName,
+      hospitalName: samplePatient.hospitalName,
       summary: 'Summary',
       physicalTherapy: 'Range of motion.',
       equipment: parsed.equipment,
@@ -163,11 +175,11 @@ describe('chart assistant', () => {
 })
 
 describe('validation', () => {
-  it('accepts the demo chart and rejects a short phone number', () => {
-    const parsed = parseDischarge(SAMPLE_NOTE)
+  it('accepts the sample chart and rejects a short phone number', () => {
+    const parsed = parseDischarge(sampleNote)
     const good = validatePlan({
-      ...DEMO,
-      dischargeNote: SAMPLE_NOTE,
+      ...samplePatient,
+      dischargeNote: sampleNote,
       summary: '',
       medications: parsed.medications,
       physicalTherapy: parsed.physicalTherapy,
@@ -176,9 +188,9 @@ describe('validation', () => {
     assert.equal(good.ok, true)
     if (good.ok) assert.match(good.value.summary, /Morgan Ellis/)
     const bad = validatePlan({
-      ...DEMO,
+      ...samplePatient,
       phone: '555',
-      dischargeNote: SAMPLE_NOTE,
+      dischargeNote: sampleNote,
       summary: 'Ready',
       medications: parsed.medications,
       physicalTherapy: parsed.physicalTherapy,

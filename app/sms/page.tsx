@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { Header } from '@/components/Header'
 import { Poller } from '@/components/Poller'
-import { DEMO, patientPath } from '@/lib/plan'
+import { patientPath } from '@/lib/plan'
 import { listThreads } from '@/lib/store'
 
 export const metadata = { title: 'Messages' }
@@ -14,9 +14,9 @@ function preview(body: string): string {
 
 export default async function SmsPage({ searchParams }: { searchParams: Promise<{ patient?: string }> }) {
   const query = await searchParams
-  const focus = query.patient && query.patient === DEMO.id ? DEMO.id : query.patient
-  const threads = await listThreads(focus || DEMO.id)
-  const thread = threads.find((row) => row.patientId === (focus || DEMO.id)) ?? threads[0]
+  const focus = query.patient
+  const threads = await listThreads(focus)
+  const thread = (focus ? threads.find((row) => row.patientId === focus) : undefined) ?? threads[0]
 
   return (
     <main className="wrap">
@@ -25,6 +25,15 @@ export default async function SmsPage({ searchParams }: { searchParams: Promise<
       <div className="stack">
         <h1>Messages</h1>
         <p className="hint">What caregivers receive after the doctor submits a discharge.</p>
+        {threads.length > 1 ? (
+          <p className="row">
+            {threads.map((row) => (
+              <Link key={row.patientId} href={`/sms?patient=${row.patientId}`}>
+                {row.patientName}
+              </Link>
+            ))}
+          </p>
+        ) : null}
         {thread ? (
           <section className="stack">
             <p>
@@ -46,7 +55,7 @@ export default async function SmsPage({ searchParams }: { searchParams: Promise<
                 </article>
               ))
             ) : (
-              <p className="hint">No messages sent yet. Use Send next reminder on the doctor page.</p>
+              <p className="hint">No messages sent yet. Submit a discharge and send the next reminder from the doctor chart.</p>
             )}
             {thread.scheduled.length ? (
               <p className="hint">{thread.scheduled.length} more reminders scheduled for the next 72 hours.</p>
@@ -54,7 +63,7 @@ export default async function SmsPage({ searchParams }: { searchParams: Promise<
           </section>
         ) : (
           <p className="hint">
-            <Link href="/doctor">Start with the demo on the doctor page</Link>.
+            <Link href="/doctor">Create a discharge on the doctor page</Link> to see messages here.
           </p>
         )}
       </div>
