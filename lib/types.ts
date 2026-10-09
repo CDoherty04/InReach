@@ -104,6 +104,9 @@ export type PatientPageData = {
   physicalTherapy: string
   equipment: string[]
   prefs: Prefs
+  channel: 'telegram' | 'sms'
+  telegramConnectUrl: string | null
+  telegramLinked: boolean
   verify: TaskView | null
   openMeds: TaskView[]
   upcoming: TaskView[]
@@ -122,6 +125,7 @@ export type DoctorPatient = {
   tasks: DoctorTask[]
   nextTask: DoctorTask | null
   orderStatus: 'pending' | 'paid' | null
+  telegramLinked: boolean
 }
 
 export type PatientListItem = {

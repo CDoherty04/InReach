@@ -1,6 +1,7 @@
 import { respondAction } from '@/app/actions'
 import { L } from '@/components/L'
 import { SubmitButton } from '@/components/SubmitButton'
+import { TelegramConnect } from '@/components/TelegramConnect'
 import { clockPreview, durationLabel, formatPhone, timesPerDayLabel } from '@/lib/plan'
 import type { PatientPageData, TaskView } from '@/lib/types'
 
@@ -71,11 +72,16 @@ export function PatientView({ data }: { data: PatientPageData }) {
         {data.city}
       </p>
       <p className="hint">
-        <L
-          en={`Texts go to ${formatPhone(data.caregiverPhone)} and ${formatPhone(data.phone)}. Times are Central.`}
-          es={`Los textos van a ${formatPhone(data.caregiverPhone)} y ${formatPhone(data.phone)}. Los horarios son del centro.`}
-        />
+        {data.channel === 'telegram' ? (
+          <L en="Reminders go to linked Telegram chats. Times are Central." es="Los recordatorios van a los chats de Telegram vinculados. Los horarios son del centro." />
+        ) : (
+          <L
+            en={`Texts go to ${formatPhone(data.caregiverPhone)} and ${formatPhone(data.phone)}. Times are Central.`}
+            es={`Los textos van a ${formatPhone(data.caregiverPhone)} y ${formatPhone(data.phone)}. Los horarios son del centro.`}
+          />
+        )}
       </p>
+      {data.channel === 'telegram' ? <TelegramConnect connectUrl={data.telegramConnectUrl} linked={data.telegramLinked} /> : null}
       <p>
         <L
           en="This page covers the first 72 hours after discharge. Texts ask yes or no when a dose is due."

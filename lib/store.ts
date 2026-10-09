@@ -562,6 +562,7 @@ export async function getDoctorPatient(id: string): Promise<DoctorPatient | null
     tasks,
     nextTask: tasks.find((task) => !task.sentAt) ?? null,
     orderStatus: order?.status ?? null,
+    telegramLinked: Boolean(patient.telegramChatIds?.length),
   }
 }
 
@@ -574,9 +575,13 @@ export async function getPatientPage(id: string): Promise<PatientPageData | null
   const tasks = (await taskCol(db).find({ patientId: id }).toArray()).sort(bySchedule(patient)).map((task) => viewTask(task, patient, now))
   const verify = tasks.find((task) => task.kind === 'verify') ?? null
   const meds = tasks.filter((task) => task.kind === 'med')
+  const botUser = await telegramBotUsername()
   return {
     id: patient._id,
     status: patient.status,
+    channel: telegramConfigured() ? 'telegram' : 'sms',
+    telegramConnectUrl: telegramConnectUrl(patient._id, botUser),
+    telegramLinked: Boolean(patient.telegramChatIds?.length),
     name: patient.name,
     phone: patient.phone,
     caregiverName: patient.caregiverName,

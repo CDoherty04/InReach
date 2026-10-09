@@ -5,6 +5,8 @@ import { Header } from '@/components/Header'
 import { PlanEditor } from '@/components/PlanEditor'
 import { SubmitButton } from '@/components/SubmitButton'
 import { patientPath } from '@/lib/plan'
+import { TelegramConnect } from '@/components/TelegramConnect'
+import { telegramBotUsername, telegramConfigured, telegramConnectUrl } from '@/lib/telegram'
 import { getDoctorPatient } from '@/lib/store'
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -24,6 +26,10 @@ export default async function DoctorPatientPage({
   const query = await searchParams
   const patient = await getDoctorPatient(id)
   if (!patient) notFound()
+  const telegramUrl =
+    telegramConfigured() && patient.status === 'active'
+      ? telegramConnectUrl(patient.id, await telegramBotUsername())
+      : null
   return (
     <main className="wrap">
       <Header />
@@ -41,6 +47,7 @@ export default async function DoctorPatientPage({
             {query.error}
           </p>
         ) : null}
+        {telegramUrl ? <TelegramConnect connectUrl={telegramUrl} linked={patient.telegramLinked} /> : null}
         {patient.status === 'active' ? (
           <section className="card">
             <h2>Texts</h2>
