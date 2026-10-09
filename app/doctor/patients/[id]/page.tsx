@@ -57,7 +57,9 @@ export default async function DoctorPatientPage({
               {patient.tasks.map((task) => (
                 <li key={task.id}>
                   <strong>{task.stampEn}</strong> {task.questionEn}{' '}
-                  <span className="hint">{task.response ? task.response : task.sentAt ? 'sent' : 'scheduled'}</span>
+                  <span className="hint">
+                    {task.response ? task.response : task.sentAt ? (task.delivery ? 'not delivered' : 'sent') : 'scheduled'}
+                  </span>
                 </li>
               ))}
             </ul>

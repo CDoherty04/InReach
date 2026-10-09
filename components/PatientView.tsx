@@ -61,9 +61,6 @@ function TaskCard({ task, patientId, med = false }: { task: TaskView; patientId:
 export function PatientView({ data }: { data: PatientPageData }) {
   return (
     <div className="stack">
-      <p className="eyebrow">
-        <L en="First 72 hours" es="Primeras 72 horas" />
-      </p>
       <h1>{data.name}</h1>
       <p>
         <L en={`Caregiver: ${data.caregiverName}`} es={`Persona cuidadora: ${data.caregiverName}`} />
@@ -119,27 +116,6 @@ export function PatientView({ data }: { data: PatientPageData }) {
         ) : (
           <p className="hint">
             <L en="No medication texts are waiting." es="No hay textos de medicamentos en espera." />
-          </p>
-        )}
-      </section>
-      <section aria-labelledby="upcoming-heading">
-        <h2 id="upcoming-heading">
-          <L en="Coming up" es="Próximos" />
-        </h2>
-        {data.upcoming.length ? (
-          <ul className="plain schedule">
-            {data.upcoming.map((task) => (
-              <li key={task.id}>
-                <span className="hint">{task.stampEn}</span>
-                <div>
-                  <L en={task.questionEn} es={task.questionEs} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="hint">
-            <L en="Nothing else is scheduled in this 72-hour window." es="No hay nada más programado en estas 72 horas." />
           </p>
         )}
       </section>

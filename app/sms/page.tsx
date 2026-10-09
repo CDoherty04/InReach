@@ -14,7 +14,7 @@ export default async function SmsPage({ searchParams }: { searchParams: Promise<
       <Header />
       <div className="stack">
         <h1>Text thread</h1>
-        <p className="hint">Demo inbox for the caregiver and the patient. Each message links to that patient’s page.</p>
+        <p className="hint">Same doses as the patient page. Each row is one scheduled text.</p>
         {threads.length ? (
           threads.map((thread) => (
             <section key={thread.patientId} className="stack" id={`thread-${thread.patientId}`}>
@@ -34,6 +34,7 @@ export default async function SmsPage({ searchParams }: { searchParams: Promise<
                   <p>
                     <a href={message.href}>{message.href}</a>
                   </p>
+                  {message.delivery ? <p className="warn">{message.delivery}</p> : null}
                 </article>
               ))}
               {thread.scheduled.length ? (

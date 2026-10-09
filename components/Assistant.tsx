@@ -2,8 +2,17 @@
 
 import { useState } from 'react'
 import { answerQuestion } from '@/lib/plan'
-import type { AssistantFacts } from '@/lib/types'
+import type { AssistantFacts, Lang } from '@/lib/types'
 import { L } from '@/components/L'
+
+const SPEECH_LOCALE: Record<Lang, string> = {
+  en: 'en-US',
+  es: 'es-MX',
+  fr: 'fr-FR',
+  zh: 'zh-CN',
+  vi: 'vi-VN',
+  ar: 'ar-SA',
+}
 
 type SpeechResult = { results: ArrayLike<ArrayLike<{ transcript: string }>> }
 type SpeechRec = {
@@ -14,10 +23,11 @@ type SpeechRec = {
   start: () => void
 }
 
-export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: 'en' | 'es' }) {
+export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }) {
   const [question, setQuestion] = useState('')
   const [hint, setHint] = useState('')
-  const answer = question.trim() ? answerQuestion(question, facts, lang) : ''
+  const contentLang: 'en' | 'es' = lang === 'es' ? 'es' : 'en'
+  const answer = question.trim() ? answerQuestion(question, facts, contentLang) : ''
 
   function dictate() {
     const host = window as Window & {
@@ -30,7 +40,7 @@ export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: 'en' |
       return
     }
     const rec = new Ctor()
-    rec.lang = lang === 'es' ? 'es-MX' : 'en-US'
+    rec.lang = SPEECH_LOCALE[lang] ?? 'en-US'
     rec.interimResults = false
     rec.onresult = (event) => {
       const text = event.results[0]?.[0]?.transcript ?? ''

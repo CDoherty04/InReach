@@ -133,11 +133,13 @@ export function defaultPrefs(): Prefs {
   return { lang: 'en', textSize: 'md', contrast: false, dark: false }
 }
 
+const LANGS: Prefs['lang'][] = ['en', 'es', 'fr', 'zh', 'vi', 'ar']
+
 export function sanitizePrefs(input: unknown): Prefs | null {
   if (!input || typeof input !== 'object') return null
   const value = input as Partial<Prefs>
-  if (value.lang !== 'en' && value.lang !== 'es') return null
-  if (value.textSize !== 'md' && value.textSize !== 'lg' && value.textSize !== 'xl') return null
+  if (!value.lang || !LANGS.includes(value.lang)) return null
+  if (value.textSize !== 'sm' && value.textSize !== 'md' && value.textSize !== 'lg' && value.textSize !== 'xl') return null
   if (typeof value.contrast !== 'boolean' || typeof value.dark !== 'boolean') return null
   return {
     lang: value.lang,
@@ -360,6 +362,7 @@ export function presentTask(
     questionEs,
     stampEn: formatStamp(task.scheduledFor),
     overdue,
+    delivery: null,
   }
 }
 

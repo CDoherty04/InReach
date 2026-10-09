@@ -22,7 +22,8 @@ import {
   validatePlan,
 } from '@/lib/plan'
 import { checkoutOrderId, createCheckoutUrl } from '@/lib/payments'
-import { sendSms, type SmsResult } from '@/lib/sms'
+import { deliverReminder, deliveryNote, type DeliveryResult } from '@/lib/delivery'
+import { ensureTelegramWebhook, telegramBotUsername, telegramConnectUrl, telegramConfigured } from '@/lib/telegram'
 import type {
   DoctorPatient,
   MessageView,
@@ -56,6 +57,7 @@ type PatientDoc = {
   status: 'draft' | 'active'
   dischargeAt: Date | null
   prefs: Prefs
+  telegramChatIds?: string[]
   seedComplete?: boolean
   createdAt: Date
   updatedAt: Date
@@ -82,7 +84,7 @@ type MessageDoc = {
   href: string
   taskId: string
   sentAt: Date
-  sms?: SmsResult[]
+  sms?: DeliveryResult[]
 }
 
 type OrderDoc = {
@@ -191,6 +193,31 @@ function viewTask(task: TaskDoc, patient: PatientDoc, now: Date): TaskView {
   )
 }
 
+function textBody(patient: PatientDoc, task: TaskDoc): string {
+  return englishSms({
+    caregiverName: patient.caregiverName,
+    patientName: patient.name,
+    doctorName: patient.doctorName,
+    hospitalName: patient.hospitalName,
+    kind: task.kind,
+    medName: task.medName,
+    href: `${baseUrl()}${patientPath(patient._id)}`,
+    whenLabel: formatWhen(task.scheduledFor, 'en'),
+  })
+}
+
+function recipients(patient: PatientDoc): string[] {
+  const phones: string[] = []
+  const seen = new Set<string>()
+  for (const phone of [patient.caregiverPhone, patient.phone]) {
+    const key = phone.replace(/\D/g, '')
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    phones.push(phone)
+  }
+  return phones
+}
+
 async function wipeDemo(db: Db) {
   await patientCol(db).deleteOne({ _id: DEMO.id })
   await taskCol(db).deleteMany({ patientId: DEMO.id })
@@ -284,9 +311,13 @@ async function seedIfNeeded(db: Db) {
   }
 }
 
-export async function dispatchDue(db: Db) {
+export async function dispatchDue(db: Db, forceId?: string) {
   const now = new Date()
   const due = await taskCol(db).find({ sentAt: null, scheduledFor: { $lte: now } }).toArray()
+  if (forceId && !due.some((task) => task._id === forceId)) {
+    const forced = await taskCol(db).findOne({ _id: forceId, sentAt: null })
+    if (forced) due.unshift(forced)
+  }
   const patientsById = new Map<string, PatientDoc>()
   for (const task of due) {
     if (patientsById.has(task.patientId)) continue
@@ -308,17 +339,8 @@ export async function dispatchDue(db: Db) {
     if (!patient || patient.status !== 'active') continue
     const sentAt = new Date(now.getTime() + index)
     const href = `${baseUrl()}${patientPath(patient._id)}`
-    const body = englishSms({
-      caregiverName: patient.caregiverName,
-      patientName: patient.name,
-      doctorName: patient.doctorName,
-      hospitalName: patient.hospitalName,
-      kind: task.kind,
-      medName: task.medName,
-      href,
-      whenLabel: formatWhen(task.scheduledFor, 'en'),
-    })
-    const toPhones = [patient.caregiverPhone, patient.phone]
+    const body = textBody(patient, task)
+    const toPhones = recipients(patient)
     let inserted = false
     try {
       await messageCol(db).insertOne({
@@ -336,8 +358,7 @@ export async function dispatchDue(db: Db) {
     }
     await taskCol(db).updateOne({ _id: task._id, sentAt: null }, { $set: { sentAt } })
     if (inserted) {
-      const sms: SmsResult[] = []
-      for (const phone of toPhones) sms.push(await sendSms(phone, body))
+      const sms = await deliverReminder(patient, body)
       await messageCol(db).updateOne({ _id: `msg:${task._id}` }, { $set: { sms } })
     }
   }
@@ -360,9 +381,30 @@ export async function ready(): Promise<Db> {
     globalForApp.__seventyTwoIndexed = true
   }
   await seedIfNeeded(db)
+  await ensureTelegramWebhookOnce(db)
   await dispatchDue(db)
   startTimer()
   return db
+}
+
+async function ensureTelegramWebhookOnce(db: Db) {
+  if (!telegramConfigured()) return
+  const lock = await metaCol(db).updateOne(
+    { _id: 'telegram-webhook' },
+    { $setOnInsert: { at: new Date() } },
+    { upsert: true },
+  )
+  if (lock.upsertedCount !== 1) return
+  await ensureTelegramWebhook(baseUrl())
+}
+
+export async function linkTelegramChat(patientId: string, chatId: string): Promise<void> {
+  if (!isPatientId(patientId) || !chatId) return
+  const db = await getDb()
+  await patientCol(db).updateOne(
+    { _id: patientId },
+    { $addToSet: { telegramChatIds: chatId }, $set: { updatedAt: new Date() } },
+  )
 }
 
 async function uniquePatientId(db: Db, name: string): Promise<string> {
@@ -502,7 +544,14 @@ export async function getDoctorPatient(id: string): Promise<DoctorPatient | null
   const patient = await patientCol(db).findOne({ _id: id })
   if (!patient) return null
   const now = new Date()
-  const tasks = (await taskCol(db).find({ patientId: id }).toArray()).sort(bySchedule(patient)).map((task) => viewTask(task, patient, now))
+  const messages = await messageCol(db).find({ patientId: id }).toArray()
+  const deliveryByTask = new Map(
+    messages.map((message) => [message.taskId, deliveryNote(message.sms, message.toPhones)]),
+  )
+  const tasks = (await taskCol(db).find({ patientId: id }).toArray()).sort(bySchedule(patient)).map((task) => ({
+    ...viewTask(task, patient, now),
+    delivery: deliveryByTask.get(task._id) ?? null,
+  }))
   const order = await orderCol(db).findOne({ _id: `${id}:portal` })
   return {
     id: patient._id,
@@ -564,22 +613,32 @@ export async function listThreads(focusId?: string): Promise<ThreadView[]> {
   const people = await patientCol(db).find({ status: 'active' }).toArray()
   const threads: ThreadView[] = []
   for (const patient of people) {
-    const sentDocs = await messageCol(db).find({ patientId: patient._id }).sort({ sentAt: -1, _id: -1 }).toArray()
-    const future = (await taskCol(db).find({ patientId: patient._id, sentAt: null }).toArray()).sort(bySchedule(patient))
-    if (!sentDocs.length && !future.length) continue
+    const tasks = (await taskCol(db).find({ patientId: patient._id }).toArray()).sort(bySchedule(patient))
+    if (!tasks.length) continue
+    const sentDocs = await messageCol(db).find({ patientId: patient._id }).toArray()
+    const deliveryByTask = new Map(sentDocs.map((message) => [message.taskId, deliveryNote(message.sms, message.toPhones)]))
     const href = `${baseUrl()}${patientPath(patient._id)}`
-    const sent: MessageView[] = sentDocs.map((message) => ({
-      id: message._id,
-      patientId: patient._id,
-      patientName: patient.name,
-      body: message.body,
-      href: message.href,
-      stampEn: formatStamp(message.sentAt),
-    }))
-    const scheduled: ScheduledView[] = future.map((task) => {
-      const view = viewTask(task, patient, new Date())
-      return { id: task._id, questionEn: view.questionEn, stampEn: view.stampEn, href }
-    })
+    const now = new Date()
+    const sent: MessageView[] = tasks
+      .filter((task) => task.sentAt)
+      .map((task) => {
+        const view = viewTask(task, patient, now)
+        return {
+          id: task._id,
+          patientId: patient._id,
+          patientName: patient.name,
+          body: textBody(patient, task),
+          href,
+          stampEn: view.stampEn,
+          delivery: deliveryByTask.get(task._id) ?? null,
+        }
+      })
+    const scheduled: ScheduledView[] = tasks
+      .filter((task) => !task.sentAt)
+      .map((task) => {
+        const view = viewTask(task, patient, now)
+        return { id: task._id, questionEn: view.questionEn, stampEn: view.stampEn, href }
+      })
     threads.push({
       patientId: patient._id,
       patientName: patient.name,
@@ -698,8 +757,7 @@ export async function sendNextText(patientId: string): Promise<{ error: string }
   const pending = (await taskCol(db).find({ patientId, sentAt: null }).toArray()).sort(bySchedule(patient))
   const next = pending[0]
   if (!next) return { error: 'No upcoming texts.' }
-  await taskCol(db).updateOne({ _id: next._id }, { $set: { scheduledFor: new Date() } })
-  await dispatchDue(db)
+  await dispatchDue(db, next._id)
   return { ok: true }
 }
 

@@ -7,9 +7,11 @@ export type Medication = {
   durationDays: number
 }
 
+export type Lang = 'en' | 'es' | 'fr' | 'zh' | 'vi' | 'ar'
+
 export type Prefs = {
-  lang: 'en' | 'es'
-  textSize: 'md' | 'lg' | 'xl'
+  lang: Lang
+  textSize: 'sm' | 'md' | 'lg' | 'xl'
   contrast: boolean
   dark: boolean
 }
@@ -71,6 +73,7 @@ export type TaskView = {
   questionEs: string
   stampEn: string
   overdue: boolean
+  delivery: string | null
 }
 
 export type AssistantFacts = {
@@ -137,6 +140,7 @@ export type MessageView = {
   body: string
   href: string
   stampEn: string
+  delivery: string | null
 }
 
 export type ScheduledView = {

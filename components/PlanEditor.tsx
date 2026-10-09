@@ -2,8 +2,8 @@
 
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { extractUploadAction, parseNoteAction, savePatientAction } from '@/app/actions'
-import { DEMO, SAMPLE_NOTE, buildSummary, clockPreview, newId } from '@/lib/plan'
+import { extractUploadAction, savePatientAction } from '@/app/actions'
+import { buildSummary, clockPreview, newId } from '@/lib/plan'
 import type { Medication, ParseResult, PlanFields } from '@/lib/types'
 
 function formatInitialPhone(phone: string): string {
@@ -87,20 +87,6 @@ export function PlanEditor({
     setParsedNote(note)
     setReady(true)
     return true
-  }
-
-  async function parseText(note: string, base: PlanFields) {
-    setPending(true)
-    setError(null)
-    try {
-      const result = await parseNoteAction(note)
-      if ('error' in result) setError(result.error)
-      else applyParsed(note, result.parsed, base)
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Could not read that note.')
-    } finally {
-      setPending(false)
-    }
   }
 
   async function uploadFile(file: File) {
@@ -191,25 +177,6 @@ export function PlanEditor({
             <button type="button" className="btn" onClick={() => setManual(true)}>
               Enter manually
             </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={pending}
-              onClick={() =>
-                void parseText(SAMPLE_NOTE, {
-                  ...draft,
-                  name: draft.name || DEMO.name,
-                  phone: draft.phone || formatInitialPhone(DEMO.phone),
-                  caregiverName: draft.caregiverName || DEMO.caregiverName,
-                  caregiverPhone: draft.caregiverPhone || formatInitialPhone(DEMO.caregiverPhone),
-                  doctorName: draft.doctorName || DEMO.doctorName,
-                  hospitalName: draft.hospitalName || DEMO.hospitalName,
-                  city: draft.city || DEMO.city,
-                })
-              }
-            >
-              Load sample note
-            </button>
             </div>
           </div>
           {error ? (
@@ -260,51 +227,6 @@ export function PlanEditor({
         Discharge note
         <textarea rows={12} value={draft.dischargeNote} onChange={(event) => patch({ dischargeNote: event.target.value })} />
       </label>
-      <div className="row">
-        {status === 'new' && manual ? null : (
-          <label className="btn">
-            Upload PDF
-            <input className="sr" type="file" accept="application/pdf,.pdf" onChange={onUpload} />
-          </label>
-        )}
-        <button type="button" className="btn" disabled={pending} onClick={() => void parseText(draft.dischargeNote, draft)}>
-          Parse note
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={pending}
-          onClick={() =>
-            void parseText(SAMPLE_NOTE, {
-              ...draft,
-              name: draft.name || DEMO.name,
-              phone: draft.phone || formatInitialPhone(DEMO.phone),
-              caregiverName: draft.caregiverName || DEMO.caregiverName,
-              caregiverPhone: draft.caregiverPhone || formatInitialPhone(DEMO.caregiverPhone),
-              doctorName: draft.doctorName || DEMO.doctorName,
-              hospitalName: draft.hospitalName || DEMO.hospitalName,
-              city: draft.city || DEMO.city,
-            })
-          }
-        >
-          Load sample note
-        </button>
-      </div>
-      <details>
-        <summary>Note format</summary>
-        <pre className="hint">{`A discharge PDF like Michael Carter's chart, with Name, Primary caregiver, Caregiver phone, and Author.
-
-Or a labeled note:
-Medications
-- Ibuprofen | 600 mg | qty 1 | every 8 hours | 7 days
-
-Physical therapy
-Passive range of motion twice a day.
-
-Equipment
-- Wheelchair, 18 inch`}</pre>
-      </details>
-      {draft.dischargeNote !== parsedNote && parsedNote ? <p className="hint">Note changed. Parse again to refresh the plan.</p> : null}
       <label>
         Summary the doctor reviews
         <textarea rows={4} value={draft.summary} onChange={(event) => patch({ summary: event.target.value })} />
@@ -324,17 +246,6 @@ Equipment
                 <input value={med.dose} onChange={(event) => patchMed(med.id, { dose: event.target.value })} />
               </label>
             </div>
-            <label className="slider-row">
-              Quantity
-              <input
-                type="range"
-                min={1}
-                max={6}
-                value={med.quantity}
-                onChange={(event) => patchMed(med.id, { quantity: Number(event.target.value) })}
-              />
-              <output>{med.quantity}</output>
-            </label>
             <label className="slider-row">
               Times a day
               <input

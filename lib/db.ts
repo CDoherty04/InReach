@@ -18,10 +18,9 @@ function slotOf(): Slot {
 }
 
 export function baseUrl(): string {
-  const slot = slotOf()
-  if (slot.baseUrl) return slot.baseUrl
   const fromEnv = process.env.NEXT_PUBLIC_BASE_URL?.replace(/\/$/, '')
-  return fromEnv || 'http://localhost:3000'
+  if (fromEnv) return fromEnv
+  return slotOf().baseUrl || 'http://localhost:3000'
 }
 
 async function rememberRequestBase(): Promise<void> {
