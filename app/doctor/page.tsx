@@ -13,9 +13,12 @@ export default async function DoctorPage() {
       <div className="stack">
         <h1>InReach</h1>
         <p>After discharge, caregivers get timed yes/no reminders and a simple home page for the first 72 hours.</p>
-        <p>
+        <p className="row">
           <Link className="btn primary" href="/doctor/new">
             New discharge
+          </Link>
+          <Link className="btn" href="/doctor/orders">
+            Hospital invoice
           </Link>
         </p>
         {patients.length ? (

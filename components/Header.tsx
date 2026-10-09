@@ -9,6 +9,7 @@ export function Header() {
       <nav>
         <Link href="/doctor">Doctor</Link>
         <Link href="/sms">Messages</Link>
+        <Link href="/doctor/orders">Invoice</Link>
       </nav>
     </header>
   )
