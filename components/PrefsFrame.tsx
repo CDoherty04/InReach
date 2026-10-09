@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { updatePrefsAction } from '@/app/actions'
 import { Assistant } from '@/components/Assistant'
-import { L } from '@/components/L'
+import { LangProvider } from '@/components/LangContext'
+import { patientCopy } from '@/lib/patient-copy'
 import type { AssistantFacts, Lang, Prefs } from '@/lib/types'
 
 const LANGUAGES: { code: Lang; flag: string; label: string }[] = [
@@ -15,11 +16,11 @@ const LANGUAGES: { code: Lang; flag: string; label: string }[] = [
   { code: 'ar', flag: '🇸🇦', label: 'العربية' },
 ]
 
-const TEXT_SIZES: { value: Prefs['textSize']; en: string; es: string }[] = [
-  { value: 'sm', en: 'Small', es: 'Pequeño' },
-  { value: 'md', en: 'Default', es: 'Normal' },
-  { value: 'lg', en: 'Large', es: 'Grande' },
-  { value: 'xl', en: 'Largest', es: 'Máximo' },
+const TEXT_SIZE_KEYS = [
+  { value: 'sm' as const, key: 'sizeSm' as const },
+  { value: 'md' as const, key: 'sizeMd' as const },
+  { value: 'lg' as const, key: 'sizeLg' as const },
+  { value: 'xl' as const, key: 'sizeXl' as const },
 ]
 
 function sheetClass(prefs: Prefs): string {
@@ -40,13 +41,13 @@ export function PrefsFrame({
   const [prefs, setPrefs] = useState(initial)
   const latest = useRef(initial)
   const chain = useRef(Promise.resolve())
-  const es = prefs.lang === 'es'
-  const contentLang: 'en' | 'es' = es ? 'es' : 'en'
 
   useEffect(() => {
     document.documentElement.lang = prefs.lang
+    document.documentElement.dir = prefs.lang === 'ar' ? 'rtl' : 'ltr'
     return () => {
       document.documentElement.lang = 'en'
+      document.documentElement.dir = 'ltr'
     }
   }, [prefs.lang])
 
@@ -63,61 +64,63 @@ export function PrefsFrame({
   }
 
   return (
-    <div className={sheetClass(prefs)} data-lang={contentLang} lang={contentLang}>
-      <a className="skip" href="#plan">
-        <L en="Skip to plan" es="Saltar al plan" />
-      </a>
-      <div className="sheet-inner">
-        <header className="sheet-head">
-          <a className="brand" href="/doctor" aria-label="InReach">
-            <img className="brand-logo" src="/inreach-logo.png" alt="InReach" />
-          </a>
-          <div className="sheet-tools" role="toolbar" aria-label={es ? 'Accesibilidad' : 'Accessibility'}>
-            <label className="tool-select">
-              <span className="sr">
-                <L en="Language" es="Idioma" />
-              </span>
-              <select
+    <LangProvider lang={prefs.lang}>
+      <div
+        className={sheetClass(prefs)}
+        lang={prefs.lang}
+        dir={prefs.lang === 'ar' ? 'rtl' : 'ltr'}
+      >
+        <a className="skip" href="#plan">
+          {patientCopy(prefs.lang, 'skipToPlan')}
+        </a>
+        <div className="sheet-inner">
+          <header className="sheet-head">
+            <a className="brand" href="/doctor" aria-label="InReach">
+              <img className="brand-logo" src="/inreach-logo.png" alt="InReach" />
+            </a>
+            <div className="sheet-tools" role="toolbar" aria-label={patientCopy(prefs.lang, 'accessibility')}>
+              <label className="tool-select">
+                <span className="sr">{patientCopy(prefs.lang, 'language')}</span>
+                <select
+                  className="tool-control"
+                  value={prefs.lang}
+                  onChange={(event) => change({ ...prefs, lang: event.target.value as Lang })}
+                >
+                  {LANGUAGES.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.flag} {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="tool-select">
+                <span className="sr">{patientCopy(prefs.lang, 'textSize')}</span>
+                <select
+                  className="tool-control"
+                  value={prefs.textSize}
+                  onChange={(event) => change({ ...prefs, textSize: event.target.value as Prefs['textSize'] })}
+                >
+                  {TEXT_SIZE_KEYS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {patientCopy(prefs.lang, option.key)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
                 className="tool-control"
-                value={prefs.lang}
-                onChange={(event) => change({ ...prefs, lang: event.target.value as Lang })}
+                aria-pressed={prefs.contrast}
+                onClick={() => change({ ...prefs, contrast: !prefs.contrast })}
               >
-                {LANGUAGES.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.flag} {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="tool-select">
-              <span className="sr">
-                <L en="Text size" es="Tamaño del texto" />
-              </span>
-              <select
-                className="tool-control"
-                value={prefs.textSize}
-                onChange={(event) => change({ ...prefs, textSize: event.target.value as Prefs['textSize'] })}
-              >
-                {TEXT_SIZES.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {es ? option.es : option.en}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="tool-control"
-              aria-pressed={prefs.contrast}
-              onClick={() => change({ ...prefs, contrast: !prefs.contrast })}
-            >
-              <L en="Contrast" es="Contraste" />
-            </button>
-          </div>
-        </header>
-        <main id="plan">{children}</main>
+                {patientCopy(prefs.lang, 'contrast')}
+              </button>
+            </div>
+          </header>
+          <main id="plan">{children}</main>
+        </div>
+        <Assistant facts={facts} lang={prefs.lang} />
       </div>
-      <Assistant facts={facts} lang={prefs.lang} />
-    </div>
+    </LangProvider>
   )
 }

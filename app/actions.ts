@@ -2,9 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { parseDischargeText } from '@/lib/ai'
+import { answerCaregiverQuestion, parseDischargeText } from '@/lib/ai'
 import { isPatientId } from '@/lib/plan'
-import type { ParseResult, Prefs, SavePatientInput } from '@/lib/types'
+import type { AssistantFacts, Lang, ParseResult, Prefs, SavePatientInput } from '@/lib/types'
 import {
   beginHospitalCheckout,
   payHospitalOrder,
@@ -106,4 +106,13 @@ export async function sendNextAction(formData: FormData) {
 export async function updatePrefsAction(patientId: string, prefs: Prefs) {
   await savePrefs(patientId, prefs)
   if (isPatientId(patientId)) revalidatePath(`/p/${patientId}`)
+}
+
+export async function voiceAnswerAction(
+  facts: AssistantFacts,
+  question: string,
+  lang: Lang,
+): Promise<{ answer: string }> {
+  const answer = await answerCaregiverQuestion(facts, question.slice(0, 2000), lang)
+  return { answer }
 }

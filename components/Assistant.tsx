@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { answerQuestion } from '@/lib/plan'
+import { voiceAnswerAction } from '@/app/actions'
+import { patientCopy } from '@/lib/patient-copy'
 import type { AssistantFacts, Lang } from '@/lib/types'
 
 const SPEECH_LOCALE: Record<Lang, string> = {
@@ -13,9 +14,15 @@ const SPEECH_LOCALE: Record<Lang, string> = {
   ar: 'ar-SA',
 }
 
-type SpeechResult = { results: ArrayLike<ArrayLike<{ transcript: string }>> }
+const PAUSE_MS = 1800
+
+type SpeechResult = {
+  resultIndex: number
+  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>
+}
 type SpeechRec = {
   lang: string
+  continuous: boolean
   interimResults: boolean
   onresult: ((event: SpeechResult) => void) | null
   onend: (() => void) | null
@@ -37,14 +44,17 @@ function MicIcon() {
 }
 
 export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }) {
-  const [status, setStatus] = useState<'idle' | 'listening' | 'speaking'>('idle')
-  const [caption, setCaption] = useState('')
+  const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle')
+  const [liveText, setLiveText] = useState('')
+  const [answerText, setAnswerText] = useState('')
   const recRef = useRef<SpeechRec | null>(null)
-  const contentLang: 'en' | 'es' = lang === 'es' ? 'es' : 'en'
-  const es = lang === 'es'
+  const finalRef = useRef('')
+  const pauseRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const answeringRef = useRef(false)
 
   useEffect(() => {
     return () => {
+      if (pauseRef.current) clearTimeout(pauseRef.current)
       recRef.current?.abort()
       window.speechSynthesis.cancel()
     }
@@ -60,10 +70,53 @@ export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }
     window.speechSynthesis.speak(utterance)
   }
 
+  function clearPauseTimer() {
+    if (pauseRef.current) {
+      clearTimeout(pauseRef.current)
+      pauseRef.current = null
+    }
+  }
+
   function stopListening() {
+    clearPauseTimer()
     recRef.current?.stop()
     recRef.current = null
     if (status === 'listening') setStatus('idle')
+  }
+
+  async function submitQuestion(question: string) {
+    if (answeringRef.current) return
+    const q = question.trim()
+    if (!q) {
+      const msg = patientCopy(lang, 'voiceNoQuestion')
+      setLiveText('')
+      setAnswerText(msg)
+      speak(msg)
+      return
+    }
+    answeringRef.current = true
+    setStatus('thinking')
+    setAnswerText('')
+    try {
+      const { answer } = await voiceAnswerAction(facts, q, lang)
+      setLiveText('')
+      setAnswerText(answer)
+      speak(answer)
+    } catch {
+      const msg = patientCopy(lang, 'voiceHearError')
+      setAnswerText(msg)
+      setStatus('idle')
+    } finally {
+      answeringRef.current = false
+    }
+  }
+
+  function scheduleSubmit() {
+    clearPauseTimer()
+    pauseRef.current = setTimeout(() => {
+      stopListening()
+      void submitQuestion(finalRef.current)
+    }, PAUSE_MS)
   }
 
   function toggleMic() {
@@ -72,8 +125,12 @@ export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }
       setStatus('idle')
       return
     }
+    if (status === 'thinking') return
     if (status === 'listening') {
+      clearPauseTimer()
+      const pending = finalRef.current.trim()
       stopListening()
+      if (pending) void submitQuestion(pending)
       return
     }
 
@@ -83,39 +140,44 @@ export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }
     }
     const Ctor = host.SpeechRecognition || host.webkitSpeechRecognition
     if (!Ctor) {
-      const msg = es ? 'Este navegador no tiene micrófono.' : 'This browser does not support the microphone.'
-      setCaption(msg)
+      const msg = patientCopy(lang, 'voiceNoMic')
+      setAnswerText(msg)
       speak(msg)
       return
     }
 
+    finalRef.current = ''
+    setLiveText('')
+    setAnswerText('')
     const rec = new Ctor()
     recRef.current = rec
     rec.lang = SPEECH_LOCALE[lang] ?? 'en-US'
-    rec.interimResults = false
-    setCaption(es ? 'Escuchando…' : 'Listening…')
+    rec.continuous = true
+    rec.interimResults = true
     setStatus('listening')
 
     rec.onresult = (event) => {
-      const question = event.results[0]?.[0]?.transcript?.trim() ?? ''
-      if (!question) {
-        const msg = es ? 'No escuché una pregunta.' : "I didn't catch a question."
-        setCaption(msg)
-        speak(msg)
-        return
+      let interim = ''
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const piece = event.results[index]
+        const text = piece[0]?.transcript ?? ''
+        if (piece.isFinal) finalRef.current += text
+        else interim += text
       }
-      const answer = answerQuestion(question, facts, contentLang)
-      setCaption(answer)
-      speak(answer)
+      const combined = `${finalRef.current}${interim}`.trim()
+      setLiveText(combined)
+      if (finalRef.current.trim()) scheduleSubmit()
     }
     rec.onerror = () => {
-      const msg = es ? 'No se pudo oír. Intente otra vez.' : "Couldn't hear you. Try again."
-      setCaption(msg)
+      const msg = patientCopy(lang, 'voiceHearError')
+      setAnswerText(msg)
       setStatus('idle')
       recRef.current = null
+      clearPauseTimer()
     }
     rec.onend = () => {
       recRef.current = null
+      clearPauseTimer()
       setStatus((current) => (current === 'listening' ? 'idle' : current))
     }
     try {
@@ -128,16 +190,15 @@ export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }
 
   const label =
     status === 'listening'
-      ? es
-        ? 'Dejar de escuchar'
-        : 'Stop listening'
+      ? patientCopy(lang, 'voiceStopListen')
       : status === 'speaking'
-        ? es
-          ? 'Detener respuesta hablada'
-          : 'Stop spoken answer'
-        : es
-          ? 'Preguntar con voz'
-          : 'Ask with voice'
+        ? patientCopy(lang, 'voiceStopSpeak')
+        : patientCopy(lang, 'voiceAsk')
+
+  const caption =
+    status === 'thinking'
+      ? patientCopy(lang, 'voiceThinking')
+      : answerText || liveText || (status === 'listening' ? patientCopy(lang, 'voiceListening') : '')
 
   return (
     <>
@@ -151,6 +212,7 @@ export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }
         className={status === 'listening' ? 'voice-fab listening' : 'voice-fab'}
         aria-label={label}
         aria-pressed={status === 'listening'}
+        disabled={status === 'thinking'}
         onClick={toggleMic}
       >
         <MicIcon />

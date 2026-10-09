@@ -1,5 +1,5 @@
-import { clampInt, newId, parseDischarge } from './plan'
-import type { Medication, ParseResult } from './types'
+import { answerQuestion, clampInt, newId, parseDischarge } from './plan'
+import type { AssistantFacts, Lang, Medication, ParseResult } from './types'
 
 const MODEL = process.env.CLAUDE_MODEL?.trim() || 'claude-haiku-5-5'
 
@@ -158,6 +158,131 @@ async function callClaude(note: string, key: string): Promise<ParseResult> {
     .trim()
   if (!content) throw new Error('Claude returned an empty plan.')
   return dischargeFromModel(readModelJson(content))
+}
+
+const VOICE_LANG: Record<Lang, string> = {
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  zh: 'Chinese (Simplified)',
+  vi: 'Vietnamese',
+  ar: 'Arabic',
+}
+
+export function limitSentences(text: string, max: number): string {
+  const trimmed = text.replace(/\s+/g, ' ').trim()
+  if (!trimmed) return trimmed
+  const parts = trimmed.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [trimmed]
+  return parts.slice(0, max).join(' ').trim()
+}
+
+function chartForVoice(facts: AssistantFacts): string {
+  return JSON.stringify({
+    patient: facts.name,
+    caregiver: facts.caregiverName,
+    doctor: facts.doctorName,
+    hospital: facts.hospitalName,
+    city: facts.city,
+    summary: facts.summary,
+    physicalTherapy: facts.physicalTherapy,
+    equipment: facts.equipment,
+    medications: facts.medications.map((med) => ({
+      name: med.name,
+      dose: med.dose,
+      quantity: med.quantity,
+      timesPerDay: med.frequencyPerDay,
+      durationDays: med.durationDays,
+    })),
+    openQuestions: facts.tasks
+      .filter((task) => task.sentAt && !task.response)
+      .map((task) => task.questionEn),
+    upcomingReminders: facts.tasks
+      .filter((task) => !task.sentAt)
+      .slice(0, 6)
+      .map((task) => task.questionEn),
+  })
+}
+
+async function callClaudeVoice(facts: AssistantFacts, question: string, lang: Lang, key: string): Promise<string> {
+  const language = VOICE_LANG[lang] ?? 'English'
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 220,
+      system: `You help a family caregiver during the first 72 hours after hospital discharge.
+Use ONLY the JSON chart. Reply in ${language}.
+Use at most 3 short sentences total.
+If the chart does not contain enough information, say what is missing and why you cannot answer—still within 3 sentences.
+Do not invent doses, times, doctors, or medical advice beyond the chart.`,
+      messages: [
+        {
+          role: 'user',
+          content: `Chart:\n${chartForVoice(facts)}\n\nCaregiver question:\n${question}`,
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(25_000),
+  })
+  const payload = (await response.json()) as {
+    content?: { type?: string; text?: string }[]
+    error?: { message?: string }
+  }
+  if (!response.ok) {
+    const message = payload.error?.message || 'Claude rejected the request.'
+    throw new Error(message)
+  }
+  const content = payload.content
+    ?.filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text)
+    .join('')
+    .trim()
+  if (!content) throw new Error('Claude returned an empty answer.')
+  return limitSentences(content, 3)
+}
+
+export async function answerCaregiverQuestion(
+  facts: AssistantFacts,
+  question: string,
+  lang: Lang,
+): Promise<string> {
+  const q = question.trim()
+  if (!q) {
+    return lang === 'es'
+      ? 'No escuché una pregunta.'
+      : lang === 'fr'
+        ? 'Je n’ai pas entendu de question.'
+        : 'I did not hear a question.'
+  }
+  const key = (process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY)?.trim()
+  if (!key) {
+    const fallbackLang = lang === 'es' ? 'es' : 'en'
+    const local = answerQuestion(q, facts, fallbackLang)
+    const prefix =
+      lang !== 'en' && lang !== 'es'
+        ? 'No AI key is set; answering in English from the chart. '
+        : ''
+    return limitSentences(prefix + local, 3)
+  }
+  try {
+    return await callClaudeVoice(facts, q, lang, key)
+  } catch {
+    const fallbackLang = lang === 'es' ? 'es' : 'en'
+    const local = answerQuestion(q, facts, fallbackLang)
+    return limitSentences(
+      lang === 'es'
+        ? `No pude contactar a Claude. ${local}`
+        : lang === 'fr'
+          ? `Claude est indisponible. ${local}`
+          : `Claude could not be reached. ${local}`,
+      3,
+    )
+  }
 }
 
 export async function parseDischargeText(note: string): Promise<ParseResult> {
