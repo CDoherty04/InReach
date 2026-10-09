@@ -1,0 +1,4 @@
+{
+  "installCommand": "MONGOMS_DISABLE_POSTINSTALL=1 npm install",
+  "crons": [{ "path": "/api/cron", "schedule": "0 13 * * *" }]
+}
