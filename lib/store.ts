@@ -108,6 +108,29 @@ function subscriptionOrderId(hospitalName: string): string {
   return `sub:${slugify(hospitalName)}`
 }
 
+/** Auto-seed chart from pre-bbea89b builds; purge so stale deploys cannot revive it. */
+const LEGACY_SEED_PATIENT_ID = 'jordan-ellis'
+const LEGACY_SEED_HOSPITAL = 'Plains Regional Hospital'
+
+function isLegacySeedPatient(patient: PatientDoc): boolean {
+  if (patient._id !== LEGACY_SEED_PATIENT_ID) return false
+  const phone = patient.phone.replace(/\D/g, '')
+  const caregiver = patient.caregiverPhone.replace(/\D/g, '')
+  return phone === '6205550142' && caregiver === '6205550199'
+}
+
+async function purgeLegacyDemoSeed(db: Db): Promise<void> {
+  await metaCol(db).deleteOne({ _id: 'seed-jordan' })
+  const legacy = await patientCol(db).findOne({ _id: LEGACY_SEED_PATIENT_ID })
+  if (!legacy || !isLegacySeedPatient(legacy)) return
+  await taskCol(db).deleteMany({ patientId: LEGACY_SEED_PATIENT_ID })
+  await messageCol(db).deleteMany({ patientId: LEGACY_SEED_PATIENT_ID })
+  await patientCol(db).deleteOne({ _id: LEGACY_SEED_PATIENT_ID })
+  if (legacy.hospitalName === LEGACY_SEED_HOSPITAL) {
+    await orderCol(db).deleteOne({ _id: subscriptionOrderId(LEGACY_SEED_HOSPITAL) })
+  }
+}
+
 const SUBSCRIPTION_DESCRIPTION = 'Annual caregiver portal subscription'
 
 const globalForApp = globalThis as typeof globalThis & {
@@ -292,6 +315,7 @@ export async function ready(): Promise<Db> {
     await orderCol(db).createIndex({ patientId: 1 })
     globalForApp.__seventyTwoIndexed = true
   }
+  await purgeLegacyDemoSeed(db)
   await syncTelegramWebhook()
   if (telegramPollingMode()) await pollTelegramUpdates(linkTelegramChat, rememberDemoTelegramChat)
   await dispatchDue(db)
