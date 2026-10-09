@@ -3,6 +3,7 @@
 import { respondAction } from '@/app/actions'
 import { usePatientLang } from '@/components/LangContext'
 import { SubmitButton } from '@/components/SubmitButton'
+import { GRANTS } from '@/lib/plan'
 import { patientCopy, patientSubtitle, taskQuestion, timesPerDay } from '@/lib/patient-copy'
 import type { PatientPageData, TaskView } from '@/lib/types'
 
@@ -105,6 +106,19 @@ export function PatientView({ data }: { data: PatientPageData }) {
       <section aria-labelledby="summary-heading">
         <h2 id="summary-heading">{patientCopy(lang, 'dischargeSummary')}</h2>
         <p>{data.summary}</p>
+      </section>
+
+      <section className="card grants" aria-labelledby="grants-heading">
+        <h2 id="grants-heading">{patientCopy(lang, 'grantsHeading')}</h2>
+        <ul>
+          {GRANTS.map((grant) => (
+            <li key={grant.href}>
+              <a href={grant.href} target="_blank" rel="noreferrer">
+                {grant.label}
+              </a>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   )

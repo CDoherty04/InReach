@@ -88,6 +88,26 @@ export async function payAction(formData: FormData) {
   redirect('/doctor/orders?paid=1')
 }
 
+/** Single invoice pay: Stripe Checkout when configured, otherwise mock card (demo). */
+export async function payInvoiceAction(formData: FormData) {
+  const orderId = String(formData.get('orderId') || '')
+  const { stripeConfigured } = await import('@/lib/payments')
+  if (stripeConfigured() && process.env.INVOICE_MOCK !== '1') {
+    const result = await beginHospitalCheckout(orderId)
+    if ('url' in result) redirect(result.url)
+  }
+  const result = await payHospitalOrder({
+    orderId,
+    method: 'card',
+    card: '4242424242424242',
+    expiry: '12/28',
+    cvc: '123',
+  })
+  revalidatePath('/doctor/orders')
+  if ('error' in result) redirect(`/doctor/orders?error=${encodeURIComponent(result.error)}`)
+  redirect('/doctor/orders?paid=1')
+}
+
 export async function sendNextAction(formData: FormData) {
   const patientId = String(formData.get('patientId') || '')
   const result = await sendNextText(patientId)
