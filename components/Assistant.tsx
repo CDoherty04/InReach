@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { voiceAnswerAction } from '@/app/actions'
+import { useLocalizedFacts } from '@/components/CareTranslation'
 import { patientCopy } from '@/lib/patient-copy'
 import type { AssistantFacts, Lang } from '@/lib/types'
 
@@ -44,6 +45,7 @@ function MicIcon() {
 }
 
 export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }) {
+  const chartFacts = useLocalizedFacts(facts)
   const [status, setStatus] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle')
   const [liveText, setLiveText] = useState('')
   const [answerText, setAnswerText] = useState('')
@@ -98,7 +100,7 @@ export function Assistant({ facts, lang }: { facts: AssistantFacts; lang: Lang }
     setStatus('thinking')
     setAnswerText('')
     try {
-      const { answer } = await voiceAnswerAction(facts, q, lang)
+      const { answer } = await voiceAnswerAction(chartFacts, q, lang)
       setLiveText('')
       setAnswerText(answer)
       speak(answer)

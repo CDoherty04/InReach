@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { updatePrefsAction } from '@/app/actions'
 import { Assistant } from '@/components/Assistant'
+import { CareTranslationProvider } from '@/components/CareTranslation'
 import { LangProvider } from '@/components/LangContext'
+import type { CareTranslation } from '@/lib/translate'
 import { patientCopy } from '@/lib/patient-copy'
 import type { AssistantFacts, Lang, Prefs } from '@/lib/types'
 
@@ -31,11 +33,13 @@ export function PrefsFrame({
   initial,
   patientId,
   facts,
+  careSource,
   children,
 }: {
   initial: Prefs
   patientId: string
   facts: AssistantFacts
+  careSource: CareTranslation & { patientId: string }
   children: React.ReactNode
 }) {
   const [prefs, setPrefs] = useState(initial)
@@ -117,9 +121,11 @@ export function PrefsFrame({
               </button>
             </div>
           </header>
-          <main id="plan">{children}</main>
+          <CareTranslationProvider source={careSource}>
+            <main id="plan">{children}</main>
+            <Assistant facts={facts} lang={prefs.lang} />
+          </CareTranslationProvider>
         </div>
-        <Assistant facts={facts} lang={prefs.lang} />
       </div>
     </LangProvider>
   )

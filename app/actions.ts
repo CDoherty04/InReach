@@ -7,6 +7,7 @@ import { isPatientId, normalizeDischargeText } from '@/lib/plan'
 import type { AssistantFacts, Lang, ParseResult, Prefs, SavePatientInput } from '@/lib/types'
 import {
   beginHospitalCheckout,
+  getOrTranslateCareContent,
   payHospitalOrder,
   respondToTask,
   savePatient,
@@ -126,6 +127,15 @@ export async function sendNextAction(formData: FormData) {
 export async function updatePrefsAction(patientId: string, prefs: Prefs) {
   await savePrefs(patientId, prefs)
   if (isPatientId(patientId)) revalidatePath(`/p/${patientId}`)
+}
+
+export async function translateCareAction(
+  patientId: string,
+  lang: Lang,
+): Promise<{ content: { summary: string; physicalTherapy: string; equipment: string[] } } | { error: string }> {
+  const result = await getOrTranslateCareContent(patientId, lang)
+  if ('error' in result) return result
+  return { content: result }
 }
 
 export async function voiceAnswerAction(

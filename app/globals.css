@@ -246,7 +246,7 @@ details summary.btn::-webkit-details-marker { display: none; }
 
 .voice-fab {
   position: fixed;
-  left: 1.25rem;
+  right: 1.25rem;
   bottom: 1.25rem;
   z-index: 20;
   width: 4.25rem;
@@ -273,7 +273,7 @@ details summary.btn::-webkit-details-marker { display: none; }
 }
 .voice-caption {
   position: fixed;
-  left: 1.25rem;
+  right: 1.25rem;
   bottom: 6.1rem;
   z-index: 20;
   max-width: min(20rem, calc(100vw - 2.5rem));

@@ -27,8 +27,15 @@ import {
   telegramPollingMode,
   telegramWebhookInfo,
 } from '@/lib/telegram'
+import {
+  careContentHash,
+  translateCareContent,
+  type CareSource,
+  type CareTranslation,
+} from '@/lib/translate'
 import type {
   DoctorPatient,
+  Lang,
   MessageView,
   OrderView,
   PatientListItem,
@@ -61,6 +68,10 @@ type PatientDoc = {
   dischargeAt: Date | null
   prefs: Prefs
   telegramChatIds?: string[]
+  translationCache?: {
+    hash: string
+    byLang: Partial<Record<Lang, CareTranslation>>
+  }
   createdAt: Date
   updatedAt: Date
 }
@@ -468,6 +479,7 @@ export async function savePatient(input: SavePatientInput): Promise<{ error: str
         updatedAt: now,
       },
       $setOnInsert: { createdAt: now },
+      $unset: { translationCache: '' },
     },
     { upsert: true },
   )
@@ -522,6 +534,40 @@ export async function getDoctorPatient(id: string): Promise<DoctorPatient | null
     orderStatus: order?.status ?? null,
     telegramLinked: Boolean(patient.telegramChatIds?.length),
   }
+}
+
+function careSourceOf(patient: PatientDoc): CareSource {
+  return {
+    summary: patient.summary,
+    physicalTherapy: patient.physicalTherapy,
+    equipment: patient.equipment,
+  }
+}
+
+export async function getOrTranslateCareContent(
+  patientId: string,
+  lang: Lang,
+): Promise<CareTranslation | { error: string }> {
+  if (!isPatientId(patientId)) return { error: 'Unknown patient.' }
+  const db = await ready()
+  const patient = await patientCol(db).findOne({ _id: patientId })
+  if (!patient) return { error: 'Unknown patient.' }
+  const source = careSourceOf(patient)
+  if (lang === 'en') return source
+
+  const hash = careContentHash(source)
+  const cached = patient.translationCache
+  if (cached?.hash === hash && cached.byLang[lang]) {
+    return cached.byLang[lang]!
+  }
+
+  const translated = await translateCareContent(lang, source)
+  const byLang = cached?.hash === hash ? { ...cached.byLang, [lang]: translated } : { [lang]: translated }
+  await patientCol(db).updateOne(
+    { _id: patientId },
+    { $set: { translationCache: { hash, byLang }, updatedAt: new Date() } },
+  )
+  return translated
 }
 
 export async function getPatientPage(id: string): Promise<PatientPageData | null> {

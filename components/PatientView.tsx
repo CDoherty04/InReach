@@ -3,8 +3,8 @@
 import { respondAction } from '@/app/actions'
 import { usePatientLang } from '@/components/LangContext'
 import { SubmitButton } from '@/components/SubmitButton'
-import { GRANTS } from '@/lib/plan'
-import { patientCopy, patientSubtitle, taskQuestion, taskStamp, timesPerDay } from '@/lib/patient-copy'
+import { useCareTranslation } from '@/components/CareTranslation'
+import { patientCopy, grantsFor, patientSubtitle, taskQuestion, taskStamp, timesPerDay } from '@/lib/patient-copy'
 import type { PatientPageData, TaskView } from '@/lib/types'
 
 function TaskRespond({
@@ -77,6 +77,8 @@ function TaskCard({
 
 export function PatientView({ data }: { data: PatientPageData }) {
   const lang = usePatientLang()
+  const { content, pending } = useCareTranslation()
+  const grants = grantsFor(lang)
 
   return (
     <div className="stack">
@@ -125,13 +127,14 @@ export function PatientView({ data }: { data: PatientPageData }) {
 
       <section aria-labelledby="summary-heading">
         <h2 id="summary-heading">{patientCopy(lang, 'dischargeSummary')}</h2>
-        <p>{data.summary}</p>
+        {pending && lang !== 'en' ? <p className="hint">{patientCopy(lang, 'translating')}</p> : null}
+        <p>{content.summary}</p>
       </section>
 
       <section className="card grants" aria-labelledby="grants-heading">
         <h2 id="grants-heading">{patientCopy(lang, 'grantsHeading')}</h2>
         <ul>
-          {GRANTS.map((grant) => (
+          {grants.map((grant) => (
             <li key={grant.href}>
               <a href={grant.href} target="_blank" rel="noreferrer">
                 {grant.label}

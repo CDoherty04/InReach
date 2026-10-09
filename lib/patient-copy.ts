@@ -1,4 +1,4 @@
-import { formatStamp, taskQuestionForLang, timesPerDayLabel } from './plan'
+import { GRANTS, formatStamp, taskQuestionForLang, timesPerDayLabel } from './plan'
 import type { Lang } from './types'
 
 type Row = Record<Lang, string>
@@ -158,7 +158,42 @@ const rows = {
     vi: 'Đang suy nghĩ…',
     ar: 'جاري التفكير…',
   },
+  translating: {
+    en: 'Translating the plan…',
+    es: 'Traduciendo el plan…',
+    fr: 'Traduction du plan…',
+    zh: '正在翻译计划…',
+    vi: 'Đang dịch kế hoạch…',
+    ar: 'جاري ترجمة الخطة…',
+  },
 } as const
+
+const GRANT_LABELS: Record<number, Record<Lang, string>> = {
+  0: {
+    en: 'KanCare (Kansas Medicaid)',
+    es: 'KanCare (Medicaid de Kansas)',
+    fr: 'KanCare (Medicaid du Kansas)',
+    zh: 'KanCare（堪萨斯州 Medicaid）',
+    vi: 'KanCare (Medicaid Kansas)',
+    ar: 'KanCare (ميدicaid كانساس)',
+  },
+  1: {
+    en: 'Social Security disability application',
+    es: 'Solicitud de incapacidad del Seguro Social',
+    fr: 'Demande d’invalidité auprès de la Sécurité sociale',
+    zh: '社会安全局残疾福利申请',
+    vi: 'Đơn khuyết tật An sinh Xã hội',
+    ar: 'طلب إعاقة الضمان الاجتماعي',
+  },
+  2: {
+    en: 'NeedyMeds',
+    es: 'NeedyMeds (medicamentos)',
+    fr: 'NeedyMeds',
+    zh: 'NeedyMeds 用药援助',
+    vi: 'NeedyMeds',
+    ar: 'NeedyMeds',
+  },
+}
 
 export type CopyKey = keyof typeof rows
 
@@ -193,4 +228,11 @@ export function taskStamp(lang: Lang, scheduledFor: string): string {
 
 export function timesPerDay(lang: Lang, count: number): string {
   return timesPerDayLabel(count, lang)
+}
+
+export function grantsFor(lang: Lang): { href: string; label: string }[] {
+  return GRANTS.map((grant, index) => ({
+    href: grant.href,
+    label: GRANT_LABELS[index]?.[lang] ?? grant.label,
+  }))
 }

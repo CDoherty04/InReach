@@ -15,7 +15,17 @@ export default async function PatientPage({ params }: { params: Promise<{ id: st
   const data = await getPatientPage(id)
   if (!data) notFound()
   return (
-    <PrefsFrame initial={data.prefs} patientId={data.id} facts={data.facts}>
+    <PrefsFrame
+      initial={data.prefs}
+      patientId={data.id}
+      facts={data.facts}
+      careSource={{
+        patientId: data.id,
+        summary: data.summary,
+        physicalTherapy: data.physicalTherapy,
+        equipment: data.equipment,
+      }}
+    >
       <Poller />
       <PatientView data={data} />
     </PrefsFrame>
