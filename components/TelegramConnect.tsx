@@ -20,8 +20,8 @@ export function TelegramConnect({
       ) : (
         <p>
           <L
-            en="Tap Connect, then press Start in Telegram. Caregiver and patient can both connect."
-            es="Toque Conectar y luego Start en Telegram. La persona cuidadora y el paciente pueden conectarse."
+            en="For the demo, message @InReach72HoursBot once with /start — every reminder uses that Telegram chat."
+            es="Para la demo, envíe /start a @InReach72HoursBot una vez; todos los recordatorios van a ese chat."
           />
         </p>
       )}

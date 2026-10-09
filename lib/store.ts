@@ -23,7 +23,16 @@ import {
 } from '@/lib/plan'
 import { checkoutOrderId, createCheckoutUrl } from '@/lib/payments'
 import { deliverReminder, deliveryNote, type DeliveryResult } from '@/lib/delivery'
-import { ensureTelegramWebhook, telegramBotUsername, telegramConnectUrl, telegramConfigured } from '@/lib/telegram'
+import {
+  deleteTelegramWebhook,
+  ensureTelegramWebhook,
+  pollTelegramUpdates,
+  telegramBotUsername,
+  telegramConnectUrl,
+  telegramConfigured,
+  telegramPollingMode,
+  telegramWebhookInfo,
+} from '@/lib/telegram'
 import type {
   DoctorPatient,
   MessageView,
@@ -110,6 +119,7 @@ const SUBSCRIPTION_DESCRIPTION = 'Annual caregiver portal subscription'
 const globalForApp = globalThis as typeof globalThis & {
   __seventyTwoTimer?: ReturnType<typeof setInterval>
   __seventyTwoIndexed?: boolean
+  __telegramWebhookSynced?: boolean
 }
 
 function isDup(error: unknown): boolean {
@@ -358,7 +368,7 @@ export async function dispatchDue(db: Db, forceId?: string) {
     }
     await taskCol(db).updateOne({ _id: task._id, sentAt: null }, { $set: { sentAt } })
     if (inserted) {
-      const sms = await deliverReminder(patient, body)
+      const sms = await deliverReminder(patient, body, await demoTelegramChatId(db))
       await messageCol(db).updateOne({ _id: `msg:${task._id}` }, { $set: { sms } })
     }
   }
@@ -381,26 +391,50 @@ export async function ready(): Promise<Db> {
     globalForApp.__seventyTwoIndexed = true
   }
   await seedIfNeeded(db)
-  await ensureTelegramWebhookOnce(db)
+  await syncTelegramWebhook()
+  if (telegramPollingMode()) await pollTelegramUpdates(linkTelegramChat, rememberDemoTelegramChat)
   await dispatchDue(db)
   startTimer()
   return db
 }
 
-async function ensureTelegramWebhookOnce(db: Db) {
-  if (!telegramConfigured()) return
-  const lock = await metaCol(db).updateOne(
-    { _id: 'telegram-webhook' },
-    { $setOnInsert: { at: new Date() } },
+async function syncTelegramWebhook() {
+  if (!telegramConfigured() || globalForApp.__telegramWebhookSynced) return
+  globalForApp.__telegramWebhookSynced = true
+  if (telegramPollingMode()) {
+    await deleteTelegramWebhook()
+    console.log('InReach: Telegram polling enabled for local dev (webhook cleared).')
+    return
+  }
+  const site = baseUrl()
+  const target = `${site.replace(/\/$/, '')}/api/telegram`
+  const info = await telegramWebhookInfo()
+  if (info?.url === target && !info.lastErrorMessage) return
+  await ensureTelegramWebhook(site)
+}
+
+export async function demoTelegramChatId(db: Db): Promise<string | null> {
+  const fromEnv = process.env.TELEGRAM_DEMO_CHAT_ID?.trim()
+  if (fromEnv) return fromEnv
+  const row = await metaCol(db).findOne({ _id: 'telegram-demo-chat' })
+  const chatId = row && 'chatId' in row ? String((row as { chatId: string }).chatId) : ''
+  return chatId || null
+}
+
+export async function rememberDemoTelegramChat(chatId: string): Promise<void> {
+  if (!chatId) return
+  const db = await getDb()
+  await metaCol(db).updateOne(
+    { _id: 'telegram-demo-chat' },
+    { $set: { chatId, at: new Date() } },
     { upsert: true },
   )
-  if (lock.upsertedCount !== 1) return
-  await ensureTelegramWebhook(baseUrl())
 }
 
 export async function linkTelegramChat(patientId: string, chatId: string): Promise<void> {
   if (!isPatientId(patientId) || !chatId) return
   const db = await getDb()
+  await rememberDemoTelegramChat(chatId)
   await patientCol(db).updateOne(
     { _id: patientId },
     { $addToSet: { telegramChatIds: chatId }, $set: { updatedAt: new Date() } },

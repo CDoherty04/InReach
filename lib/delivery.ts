@@ -22,11 +22,17 @@ function smsRecipients(patient: ReminderPatient): string[] {
   return phones
 }
 
-export async function deliverReminder(patient: ReminderPatient, body: string): Promise<DeliveryResult[]> {
-  const chatIds = [...new Set((patient.telegramChatIds ?? []).map(String).filter(Boolean))]
+export async function deliverReminder(
+  patient: ReminderPatient,
+  body: string,
+  demoChatId?: string | null,
+): Promise<DeliveryResult[]> {
   if (telegramConfigured()) {
+    const chatIds = demoChatId
+      ? [demoChatId]
+      : [...new Set((patient.telegramChatIds ?? []).map(String).filter(Boolean))]
     if (!chatIds.length) {
-      return [{ to: 'Telegram', skipped: 'No Telegram chat linked yet. Tap Connect on the patient page.' }]
+      return [{ to: 'Telegram', skipped: 'Message @InReach72HoursBot once ( /start ) to register your demo chat.' }]
     }
     const results: DeliveryResult[] = []
     for (const chatId of chatIds) results.push(await sendTelegramMessage(chatId, body))

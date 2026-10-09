@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { handleTelegramUpdate } from '@/lib/telegram'
-import { linkTelegramChat, ready } from '@/lib/store'
+import { linkTelegramChat, ready, rememberDemoTelegramChat } from '@/lib/store'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +12,6 @@ export async function POST(request: Request) {
   }
   await ready()
   const update = (await request.json()) as Parameters<typeof handleTelegramUpdate>[0]
-  await handleTelegramUpdate(update, linkTelegramChat)
+  await handleTelegramUpdate(update, linkTelegramChat, rememberDemoTelegramChat)
   return NextResponse.json({ ok: true })
 }

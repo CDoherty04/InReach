@@ -72,12 +72,13 @@ export function PrefsFrame({
           <a className="brand" href="/doctor" aria-label="InReach">
             <img className="brand-logo" src="/inreach-logo.png" alt="InReach" />
           </a>
-          <div className="tools" role="toolbar" aria-label={es ? 'Accesibilidad' : 'Accessibility'}>
+          <div className="sheet-tools" role="toolbar" aria-label={es ? 'Accesibilidad' : 'Accessibility'}>
             <label className="tool-select">
               <span className="sr">
                 <L en="Language" es="Idioma" />
               </span>
               <select
+                className="tool-control"
                 value={prefs.lang}
                 onChange={(event) => change({ ...prefs, lang: event.target.value as Lang })}
               >
@@ -93,6 +94,7 @@ export function PrefsFrame({
                 <L en="Text size" es="Tamaño del texto" />
               </span>
               <select
+                className="tool-control"
                 value={prefs.textSize}
                 onChange={(event) => change({ ...prefs, textSize: event.target.value as Prefs['textSize'] })}
               >
@@ -103,14 +105,19 @@ export function PrefsFrame({
                 ))}
               </select>
             </label>
-            <button type="button" aria-pressed={prefs.contrast} onClick={() => change({ ...prefs, contrast: !prefs.contrast })}>
+            <button
+              type="button"
+              className="tool-control"
+              aria-pressed={prefs.contrast}
+              onClick={() => change({ ...prefs, contrast: !prefs.contrast })}
+            >
               <L en="Contrast" es="Contraste" />
             </button>
           </div>
         </header>
-        <Assistant facts={facts} lang={prefs.lang} />
         <main id="plan">{children}</main>
       </div>
+      <Assistant facts={facts} lang={prefs.lang} />
     </div>
   )
 }
