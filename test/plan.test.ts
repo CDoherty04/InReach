@@ -4,8 +4,8 @@ import { dirname, join } from 'node:path'
 import { describe, it } from 'node:test'
 import { fileURLToPath } from 'node:url'
 import {
+  ANNUAL_RATE_CENTS,
   DEMO,
-  HOSPITAL_RATE_CENTS,
   SAMPLE_NOTE,
   answerQuestion,
   buildTasks,
@@ -132,9 +132,10 @@ describe('texts and payments', () => {
   })
 
   it('prices the hospital invoice and checks the mock card', () => {
-    assert.equal(HOSPITAL_RATE_CENTS, 3500)
-    assert.equal(formatMoney(3500), '$35.00')
-    assert.equal(volumeEstimate(400)?.invoiceCents, 1_400_000)
+    assert.equal(ANNUAL_RATE_CENTS, 500000)
+    assert.equal(formatMoney(500000), '$5,000.00')
+    assert.equal(volumeEstimate(500)?.annualCents, 500000)
+    assert.equal(volumeEstimate(500)?.perDischargeCents, 1000)
     assert.equal(volumeEstimate(1.5), null)
     assert.equal(cardError('4242424242424242', '12/28', '123', new Date('2026-10-09T16:00:00Z')), null)
     assert.equal(cardError('4242', '12/28', '123'), 'Enter a 16-digit card number.')

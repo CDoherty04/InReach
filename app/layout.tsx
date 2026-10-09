@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: { default: '72 Hours', template: '%s · 72 Hours' },
+  title: { default: 'InReach', template: '%s · InReach' },
   description: 'Caregiver texts for the first 72 hours after discharge.',
 }
 

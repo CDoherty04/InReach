@@ -45,13 +45,13 @@ async function connect(slot: Slot): Promise<Db> {
     if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
       throw new Error('Set MONGODB_URI to your MongoDB connection string.')
     }
-    console.log('72 Hours: using embedded MongoDB')
+    console.log('InReach: using embedded MongoDB')
     const { MongoMemoryServer } = await import('mongodb-memory-server')
     const memory = await MongoMemoryServer.create()
     slot.memory = memory
     url = memory.getUri()
   } else {
-    console.log('72 Hours: using MONGODB_URI')
+    console.log('InReach: using MONGODB_URI')
   }
   const client = new MongoClient(url)
   await client.connect()

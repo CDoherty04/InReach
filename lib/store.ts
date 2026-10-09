@@ -2,8 +2,8 @@ import 'server-only'
 import type { Db } from 'mongodb'
 import { baseUrl, getDb } from '@/lib/db'
 import {
+  ANNUAL_RATE_CENTS,
   DEMO,
-  HOSPITAL_RATE_CENTS,
   SAMPLE_NOTE,
   buildSummary,
   buildTasks,
@@ -21,6 +21,8 @@ import {
   slugify,
   validatePlan,
 } from '@/lib/plan'
+import { checkoutOrderId, createCheckoutUrl } from '@/lib/payments'
+import { sendSms, type SmsResult } from '@/lib/sms'
 import type {
   DoctorPatient,
   MessageView,
@@ -80,6 +82,7 @@ type MessageDoc = {
   href: string
   taskId: string
   sentAt: Date
+  sms?: SmsResult[]
 }
 
 type OrderDoc = {
@@ -90,11 +93,17 @@ type OrderDoc = {
   description: string
   amountCents: number
   status: 'pending' | 'paid'
-  method: 'card' | 'link' | null
+  method: 'card' | 'link' | 'stripe' | null
   last4: string | null
   createdAt: Date
   paidAt: Date | null
 }
+
+function subscriptionOrderId(hospitalName: string): string {
+  return `sub:${slugify(hospitalName)}`
+}
+
+const SUBSCRIPTION_DESCRIPTION = 'Annual caregiver portal subscription'
 
 const globalForApp = globalThis as typeof globalThis & {
   __seventyTwoTimer?: ReturnType<typeof setInterval>
@@ -186,7 +195,7 @@ async function wipeDemo(db: Db) {
   await patientCol(db).deleteOne({ _id: DEMO.id })
   await taskCol(db).deleteMany({ patientId: DEMO.id })
   await messageCol(db).deleteMany({ patientId: DEMO.id })
-  await orderCol(db).deleteOne({ _id: `${DEMO.id}:portal` })
+  await orderCol(db).deleteOne({ _id: subscriptionOrderId(DEMO.hospitalName) })
 }
 
 async function seedIfNeeded(db: Db) {
@@ -255,12 +264,12 @@ async function seedIfNeeded(db: Db) {
     })
     if (drafts.length) await taskCol(db).insertMany(drafts.map(toTaskDoc))
     await orderCol(db).insertOne({
-      _id: `${DEMO.id}:portal`,
-      patientId: DEMO.id,
-      patientName: DEMO.name,
+      _id: subscriptionOrderId(DEMO.hospitalName),
+      patientId: slugify(DEMO.hospitalName),
+      patientName: DEMO.hospitalName,
       hospitalName: DEMO.hospitalName,
-      description: `72-hour caregiver portal for ${DEMO.name}`,
-      amountCents: HOSPITAL_RATE_CENTS,
+      description: SUBSCRIPTION_DESCRIPTION,
+      amountCents: ANNUAL_RATE_CENTS,
       status: 'pending',
       method: null,
       last4: null,
@@ -309,20 +318,28 @@ export async function dispatchDue(db: Db) {
       href,
       whenLabel: formatWhen(task.scheduledFor, 'en'),
     })
+    const toPhones = [patient.caregiverPhone, patient.phone]
+    let inserted = false
     try {
       await messageCol(db).insertOne({
         _id: `msg:${task._id}`,
         patientId: patient._id,
-        toPhones: [patient.caregiverPhone, patient.phone],
+        toPhones,
         body,
         href,
         taskId: task._id,
         sentAt,
       })
+      inserted = true
     } catch (error) {
       if (!isDup(error)) throw error
     }
     await taskCol(db).updateOne({ _id: task._id, sentAt: null }, { $set: { sentAt } })
+    if (inserted) {
+      const sms: SmsResult[] = []
+      for (const phone of toPhones) sms.push(await sendSms(phone, body))
+      await messageCol(db).updateOne({ _id: `msg:${task._id}` }, { $set: { sms } })
+    }
   }
 }
 
@@ -384,14 +401,15 @@ async function writeTasks(db: Db, patient: PatientDoc, mode: 'all' | 'future') {
 }
 
 async function ensureOrder(db: Db, patient: PatientDoc) {
+  // One flat annual subscription per hospital, shared by all of its patients.
   try {
     await orderCol(db).insertOne({
-      _id: `${patient._id}:portal`,
-      patientId: patient._id,
-      patientName: patient.name,
+      _id: subscriptionOrderId(patient.hospitalName),
+      patientId: slugify(patient.hospitalName),
+      patientName: patient.hospitalName,
       hospitalName: patient.hospitalName,
-      description: `72-hour caregiver portal for ${patient.name}`,
-      amountCents: HOSPITAL_RATE_CENTS,
+      description: SUBSCRIPTION_DESCRIPTION,
+      amountCents: ANNUAL_RATE_CENTS,
       status: 'pending',
       method: null,
       last4: null,
@@ -400,10 +418,6 @@ async function ensureOrder(db: Db, patient: PatientDoc) {
     })
   } catch (error) {
     if (!isDup(error)) throw error
-    await orderCol(db).updateOne(
-      { _id: `${patient._id}:portal` },
-      { $set: { patientName: patient.name, hospitalName: patient.hospitalName } },
-    )
   }
 }
 
@@ -606,6 +620,42 @@ export async function respondToTask(taskId: string, answer: string): Promise<voi
   const task = await taskCol(db).findOne({ _id: taskId })
   if (!task?.sentAt || task.response) return
   await taskCol(db).updateOne({ _id: taskId }, { $set: { response: answer, respondedAt: new Date() } })
+}
+
+export async function beginHospitalCheckout(orderId: string): Promise<{ url: string } | { error: string }> {
+  if (!orderId || orderId.length > 120) return { error: 'Invoice not found.' }
+  const db = await ready()
+  const order = await orderCol(db).findOne({ _id: orderId })
+  if (!order) return { error: 'Invoice not found.' }
+  if (order.status === 'paid') return { error: 'This invoice is already paid.' }
+  try {
+    const url = await createCheckoutUrl({
+      orderId: order._id,
+      amountCents: order.amountCents,
+      label: `${order.hospitalName} — ${order.description}`,
+      baseUrl: baseUrl(),
+    })
+    return { url }
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Could not start Stripe checkout.' }
+  }
+}
+
+export async function confirmHospitalCheckout(sessionId: string): Promise<{ error: string } | { ok: true }> {
+  if (!sessionId || sessionId.length > 200) return { error: 'Invalid checkout session.' }
+  const db = await ready()
+  let orderId: string | null
+  try {
+    orderId = await checkoutOrderId(sessionId)
+  } catch {
+    return { error: 'Could not verify the Stripe payment.' }
+  }
+  if (!orderId) return { error: 'Payment was not completed.' }
+  await orderCol(db).updateOne(
+    { _id: orderId, status: 'pending' },
+    { $set: { status: 'paid', method: 'stripe', last4: null, paidAt: new Date() } },
+  )
+  return { ok: true }
 }
 
 export async function payHospitalOrder(input: {

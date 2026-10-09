@@ -5,7 +5,7 @@ export default function NotFound() {
     <main className="wrap">
       <h1>That page is not on a chart.</h1>
       <p>
-        <Link href="/">Back to 72 Hours</Link>
+        <Link href="/doctor">Back to InReach</Link>
       </p>
     </main>
   )

@@ -3,8 +3,8 @@ import Link from 'next/link'
 export function Header() {
   return (
     <header className="top">
-      <Link href="/" className="brand">
-        72 Hours
+      <Link href="/doctor" className="brand" aria-label="InReach">
+        <img className="brand-logo" src="/inreach-logo.png" alt="InReach" />
       </Link>
       <nav>
         <Link href="/doctor">Doctor</Link>

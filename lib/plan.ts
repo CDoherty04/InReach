@@ -1,6 +1,6 @@
 import type { Medication, ParseResult, PlanFields, Prefs, TaskDraft, TaskView } from './types'
 
-export const HOSPITAL_RATE_CENTS = 3500
+export const ANNUAL_RATE_CENTS = 500000
 
 export const GRANTS = [
   { href: 'https://www.kancare.ks.gov/', label: 'KanCare (Kansas Medicaid)' },
@@ -105,12 +105,12 @@ export function formatMoney(cents: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100)
 }
 
-export function volumeEstimate(discharges: number): { discharges: number; invoiceCents: number; variableCeilingDollars: number } | null {
+export function volumeEstimate(discharges: number): { discharges: number; annualCents: number; perDischargeCents: number } | null {
   if (!Number.isInteger(discharges) || discharges < 1 || discharges > 100000) return null
   return {
     discharges,
-    invoiceCents: discharges * HOSPITAL_RATE_CENTS,
-    variableCeilingDollars: discharges,
+    annualCents: ANNUAL_RATE_CENTS,
+    perDischargeCents: Math.round(ANNUAL_RATE_CENTS / discharges),
   }
 }
 
@@ -374,7 +374,7 @@ export function englishSms(input: {
   whenLabel: string
 }): string {
   const who = `${input.caregiverName} and ${input.patientName}`
-  const lines = [`72 Hours — text for ${who}`, '']
+  const lines = [`InReach — text for ${who}`, '']
   if (input.kind === 'verify') {
     lines.push(
       `${input.doctorName} at ${input.hospitalName} asked us to help after ${input.patientName}'s discharge. Confirm this is the right doctor on their page.`,

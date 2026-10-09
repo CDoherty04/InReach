@@ -164,7 +164,7 @@ export type OrderView = {
   description: string
   amountCents: number
   status: 'pending' | 'paid'
-  method: 'card' | 'link' | null
+  method: 'card' | 'link' | 'stripe' | null
   last4: string | null
   paidStamp: string | null
 }

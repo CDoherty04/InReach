@@ -50,8 +50,8 @@ export function PrefsFrame({
         <L en="Skip to plan" es="Saltar al plan" />
       </a>
       <div className="sheet-inner">
-        <a className="brand" href="/">
-          72 Hours
+        <a className="brand" href="/doctor" aria-label="InReach">
+          <img className="brand-logo" src="/inreach-logo.png" alt="InReach" />
         </a>
         <div className="tools" role="toolbar" aria-label={prefs.lang === 'es' ? 'Accesibilidad' : 'Accessibility'}>
           <button type="button" aria-pressed={prefs.lang === 'en'} onClick={() => change({ ...prefs, lang: 'en' })}>

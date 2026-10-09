@@ -2,9 +2,17 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { parseDischargeText } from '@/lib/ai'
 import { isPatientId } from '@/lib/plan'
-import type { Prefs, SavePatientInput } from '@/lib/types'
-import { payHospitalOrder, respondToTask, savePatient, savePrefs, sendNextText } from '@/lib/store'
+import type { ParseResult, Prefs, SavePatientInput } from '@/lib/types'
+import {
+  beginHospitalCheckout,
+  payHospitalOrder,
+  respondToTask,
+  savePatient,
+  savePrefs,
+  sendNextText,
+} from '@/lib/store'
 
 function refreshPatient(id: string) {
   revalidatePath('/doctor')
@@ -14,7 +22,9 @@ function refreshPatient(id: string) {
   revalidatePath(`/p/${id}`)
 }
 
-export async function extractUploadAction(formData: FormData): Promise<{ text: string } | { error: string }> {
+export async function extractUploadAction(
+  formData: FormData,
+): Promise<{ text: string; parsed: ParseResult } | { error: string }> {
   const file = formData.get('file')
   if (!(file instanceof File) || file.size < 1) return { error: 'Choose a PDF.' }
   if (file.size > 8_000_000) return { error: 'Keep the PDF under 8 MB.' }
@@ -24,12 +34,18 @@ export async function extractUploadAction(formData: FormData): Promise<{ text: s
     const { extractText } = await import('unpdf')
     const extracted = await extractText(new Uint8Array(await file.arrayBuffer()), { mergePages: true })
     const raw = Array.isArray(extracted.text) ? extracted.text.join('\n') : String(extracted.text || '')
-    const text = raw.replace(/--\s*\d+\s+of\s+\d+\s*--/g, '\n').trim()
+    const text = raw.replace(/--\s*\d+\s+of\s+\d+\s*--/g, '\n').trim().slice(0, 20000)
     if (!text) return { error: 'No text found in that PDF.' }
-    return { text: text.slice(0, 20000) }
+    return { text, parsed: await parseDischargeText(text) }
   } catch {
     return { error: 'Could not read that PDF.' }
   }
+}
+
+export async function parseNoteAction(note: string): Promise<{ parsed: ParseResult } | { error: string }> {
+  const text = String(note || '').trim()
+  if (!text) return { error: 'Add a discharge note first.' }
+  return { parsed: await parseDischargeText(text.slice(0, 20000)) }
 }
 
 export async function savePatientAction(
@@ -50,6 +66,13 @@ export async function respondAction(formData: FormData) {
   await respondToTask(taskId, answer)
   if (isPatientId(patientId)) revalidatePath(`/p/${patientId}`)
   revalidatePath('/sms')
+}
+
+export async function startCheckoutAction(formData: FormData) {
+  const orderId = String(formData.get('orderId') || '')
+  const result = await beginHospitalCheckout(orderId)
+  if ('error' in result) redirect(`/doctor/orders?error=${encodeURIComponent(result.error)}`)
+  redirect(result.url)
 }
 
 export async function payAction(formData: FormData) {

@@ -26,7 +26,7 @@ export default function NewDischargePage() {
       <Header />
       <div className="stack">
         <h1>New discharge</h1>
-        <p>Upload a discharge PDF, review the sliders, then submit. That texts the caregiver and opens their patient page.</p>
+        <p>Drop a discharge PDF. The plan fills in for review, then submit texts the caregiver and opens their page.</p>
         <PlanEditor status="new" fields={blank} />
       </div>
     </main>

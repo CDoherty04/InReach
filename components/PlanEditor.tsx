@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, type ChangeEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type DragEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { extractUploadAction, savePatientAction } from '@/app/actions'
-import { DEMO, SAMPLE_NOTE, buildSummary, clockPreview, newId, parseDischarge } from '@/lib/plan'
-import type { Medication, PlanFields } from '@/lib/types'
+import { extractUploadAction, parseNoteAction, savePatientAction } from '@/app/actions'
+import { DEMO, SAMPLE_NOTE, buildSummary, clockPreview, newId } from '@/lib/plan'
+import type { Medication, ParseResult, PlanFields } from '@/lib/types'
 
 function formatInitialPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '')
@@ -28,10 +28,14 @@ export function PlanEditor({
     caregiverPhone: formatInitialPhone(fields.caregiverPhone),
   })
   const [parsedNote, setParsedNote] = useState(fields.medications.length ? fields.dischargeNote : '')
-  const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
   const [pending, setPending] = useState(false)
+  const [manual, setManual] = useState(status !== 'new')
+  const [ready, setReady] = useState(status !== 'new')
+  const [hot, setHot] = useState(false)
+  const uploading = useRef(false)
+  const showForm = manual || ready
 
   function patch(partial: Partial<PlanFields>) {
     setSaved(false)
@@ -46,12 +50,10 @@ export function PlanEditor({
     }))
   }
 
-  function applyParse(note: string, base: PlanFields) {
-    const parsed = parseDischarge(note)
-    setWarnings(parsed.warnings)
+  function applyParsed(note: string, parsed: ParseResult, base: PlanFields): boolean {
     if (parsed.error && !parsed.medications.length && !parsed.physicalTherapy && !parsed.equipment.length) {
       setError(parsed.error)
-      return
+      return false
     }
     setError(null)
     const medications = parsed.medications.length ? parsed.medications : base.medications
@@ -83,12 +85,27 @@ export function PlanEditor({
     if (parsed.procedure && next.name) next.summary = `${next.name} — ${parsed.procedure}. ${next.summary}`
     setDraft(next)
     setParsedNote(note)
+    setReady(true)
+    return true
   }
 
-  async function onUpload(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]
-    event.target.value = ''
-    if (!file) return
+  async function parseText(note: string, base: PlanFields) {
+    setPending(true)
+    setError(null)
+    try {
+      const result = await parseNoteAction(note)
+      if ('error' in result) setError(result.error)
+      else applyParsed(note, result.parsed, base)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not read that note.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function uploadFile(file: File) {
+    if (uploading.current) return
+    uploading.current = true
     setPending(true)
     setError(null)
     try {
@@ -96,12 +113,26 @@ export function PlanEditor({
       body.set('file', file)
       const result = await extractUploadAction(body)
       if ('error' in result) setError(result.error)
-      else applyParse(result.text, draft)
+      else applyParsed(result.text, result.parsed, draft)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Could not read that PDF.')
     } finally {
+      uploading.current = false
       setPending(false)
     }
+  }
+
+  function onUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (file) void uploadFile(file)
+  }
+
+  function onDropFile(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setHot(false)
+    const file = event.dataTransfer.files?.[0]
+    if (file) void uploadFile(file)
   }
 
   async function submit(intent: 'draft' | 'submit' | 'update') {
@@ -131,6 +162,65 @@ export function PlanEditor({
         void submit(status === 'active' ? 'update' : 'submit')
       }}
     >
+      {showForm ? null : (
+        <>
+          <div
+            className={hot ? 'dropzone hot' : 'dropzone'}
+            onDragOver={(event) => {
+              event.preventDefault()
+              setHot(true)
+            }}
+            onDragLeave={() => setHot(false)}
+            onDrop={onDropFile}
+          >
+            <label className="dropzone-hit">
+              <input
+                className="dropzone-input"
+                type="file"
+                accept="application/pdf,.pdf"
+                aria-label="Upload discharge PDF"
+                disabled={pending}
+                onChange={(event) => void onUpload(event)}
+              />
+              <span className="dropzone-title">{pending ? 'Reading the PDF…' : 'Drop a discharge PDF'}</span>
+              <span className="hint">
+                {pending ? 'Pulling out medications, therapy, and equipment.' : 'Or click to choose a file.'}
+              </span>
+            </label>
+            <div className="row">
+            <button type="button" className="btn" onClick={() => setManual(true)}>
+              Enter manually
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={pending}
+              onClick={() =>
+                void parseText(SAMPLE_NOTE, {
+                  ...draft,
+                  name: draft.name || DEMO.name,
+                  phone: draft.phone || formatInitialPhone(DEMO.phone),
+                  caregiverName: draft.caregiverName || DEMO.caregiverName,
+                  caregiverPhone: draft.caregiverPhone || formatInitialPhone(DEMO.caregiverPhone),
+                  doctorName: draft.doctorName || DEMO.doctorName,
+                  hospitalName: draft.hospitalName || DEMO.hospitalName,
+                  city: draft.city || DEMO.city,
+                })
+              }
+            >
+              Load sample note
+            </button>
+            </div>
+          </div>
+          {error ? (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </>
+      )}
+      {showForm ? (
+      <>
       <div className="grid-2">
         <label>
           Patient name
@@ -171,18 +261,21 @@ export function PlanEditor({
         <textarea rows={12} value={draft.dischargeNote} onChange={(event) => patch({ dischargeNote: event.target.value })} />
       </label>
       <div className="row">
-        <label className="btn">
-          Upload PDF
-          <input className="sr" type="file" accept="application/pdf,.pdf" onChange={(event) => void onUpload(event)} />
-        </label>
-        <button type="button" className="btn" onClick={() => applyParse(draft.dischargeNote, draft)}>
+        {status === 'new' && manual ? null : (
+          <label className="btn">
+            Upload PDF
+            <input className="sr" type="file" accept="application/pdf,.pdf" onChange={onUpload} />
+          </label>
+        )}
+        <button type="button" className="btn" disabled={pending} onClick={() => void parseText(draft.dischargeNote, draft)}>
           Parse note
         </button>
         <button
           type="button"
           className="btn"
+          disabled={pending}
           onClick={() =>
-            applyParse(SAMPLE_NOTE, {
+            void parseText(SAMPLE_NOTE, {
               ...draft,
               name: draft.name || DEMO.name,
               phone: draft.phone || formatInitialPhone(DEMO.phone),
@@ -212,11 +305,6 @@ Equipment
 - Wheelchair, 18 inch`}</pre>
       </details>
       {draft.dischargeNote !== parsedNote && parsedNote ? <p className="hint">Note changed. Parse again to refresh the plan.</p> : null}
-      {warnings.map((warning) => (
-        <p key={warning} className="warn">
-          {warning}
-        </p>
-      ))}
       <label>
         Summary the doctor reviews
         <textarea rows={4} value={draft.summary} onChange={(event) => patch({ summary: event.target.value })} />
@@ -348,6 +436,8 @@ Equipment
           </>
         )}
       </div>
+      </>
+      ) : null}
     </form>
   )
 }
