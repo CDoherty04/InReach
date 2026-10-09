@@ -91,9 +91,15 @@ export async function payAction(formData: FormData) {
 export async function sendNextAction(formData: FormData) {
   const patientId = String(formData.get('patientId') || '')
   const result = await sendNextText(patientId)
-  if (isPatientId(patientId)) refreshPatient(patientId)
+  if (isPatientId(patientId)) {
+    refreshPatient(patientId)
+    revalidatePath('/doctor')
+  }
   if ('error' in result && isPatientId(patientId)) {
     redirect(`/doctor/patients/${patientId}?error=${encodeURIComponent(result.error)}`)
+  }
+  if ('ok' in result && isPatientId(patientId)) {
+    redirect(`/sms?patient=${patientId}`)
   }
 }
 

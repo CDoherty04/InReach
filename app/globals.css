@@ -148,6 +148,11 @@ textarea { resize: vertical; }
 
 .bubble { white-space: pre-wrap; }
 .scheduled { border-style: dashed; }
+.demo-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; align-items: center; }
+.demo-actions form { margin: 0; }
+.demo-guide h2 { margin-top: 0.15rem; }
+details summary.btn { cursor: pointer; list-style: none; display: inline-block; margin-bottom: 0.75rem; }
+details summary.btn::-webkit-details-marker { display: none; }
 .pay-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0 0.35rem; }
 .grants ul { margin: 0.35rem 0 0; padding-left: 1.15rem; }
 .sr {
