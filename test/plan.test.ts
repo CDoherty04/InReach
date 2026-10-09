@@ -17,6 +17,7 @@ import {
   isPatientId,
   medQuestion,
   normalizePhone,
+  normalizeDischargeText,
   parseDischarge,
   patientPath,
   utcFromChicago,
@@ -112,14 +113,24 @@ describe('parser', () => {
     assert.deepEqual(parsed.equipment, ['Walker'])
     assert.match(parsed.physicalTherapy, /physical and occupational therapy/)
     assert.equal(parsed.medications.length, 0)
-    assert.match(parsed.warnings.join(' '), /No medication doses/)
   })
 
   it('warns on a medication line that is not in the pipe format', () => {
     const parsed = parseDischarge('Medications\n- Ibuprofen 600 mg\n')
     assert.equal(parsed.medications.length, 0)
-    assert.equal(parsed.warnings.length, 1)
     assert.ok(parsed.error)
+  })
+
+  it('reads pipe medications when PDF text glues section headers onto one line', () => {
+    const smashed =
+      'Jordan Ellis Rural Kansas. Paralyzed after a car crash. Transferred between hospitals before discharge home to Great Bend. Medications - Ibuprofen | 600 mg | qty 1 | every 8 hours | 7 days - Acetaminophen | 500 mg | qty 2 | every 6 hours | 5 days - Enoxaparin | 40 mg | qty 1 | every 24 hours | 14 days Physical therapy Passive range of motion twice a day. Equipment - Wheelchair, 18 inch - Pressure-relief cushion - Hospital bed with rails'
+    const parsed = parseDischarge(normalizeDischargeText(smashed))
+    assert.equal(parsed.error, undefined)
+    assert.equal(parsed.name, 'Jordan Ellis')
+    assert.equal(parsed.city, 'Great Bend')
+    assert.equal(parsed.medications.length, 3)
+    assert.match(parsed.physicalTherapy, /Passive range of motion/)
+    assert.equal(parsed.equipment.length, 3)
   })
 })
 

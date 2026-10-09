@@ -1,3 +1,4 @@
+import { formatStamp, taskQuestionForLang, timesPerDayLabel } from './plan'
 import type { Lang } from './types'
 
 type Row = Record<Lang, string>
@@ -178,17 +179,18 @@ export function patientSubtitle(lang: Lang, caregiver: string, city: string): st
   return templates[lang] ?? templates.en
 }
 
-export function taskQuestion(lang: Lang, task: { questionEn: string; questionEs: string }): string {
-  if (lang === 'es') return task.questionEs
-  return task.questionEn
+export function taskQuestion(
+  lang: Lang,
+  task: { kind: 'verify' | 'med'; medName: string | null; scheduledFor: string },
+  names: { patientName: string; doctorName: string },
+): string {
+  return taskQuestionForLang(lang, task, names)
+}
+
+export function taskStamp(lang: Lang, scheduledFor: string): string {
+  return formatStamp(new Date(scheduledFor), lang)
 }
 
 export function timesPerDay(lang: Lang, count: number): string {
-  const n = Math.max(1, Math.round(count))
-  if (lang === 'es') return n === 1 ? '1 vez al día' : `${n} veces al día`
-  if (lang === 'fr') return n === 1 ? '1 fois par jour' : `${n} fois par jour`
-  if (lang === 'zh') return `每天 ${n} 次`
-  if (lang === 'vi') return n === 1 ? '1 lần mỗi ngày' : `${n} lần mỗi ngày`
-  if (lang === 'ar') return n === 1 ? 'مرة واحدة في اليوم' : `${n} مرات في اليوم`
-  return n === 1 ? '1 time a day' : `${n} times a day`
+  return timesPerDayLabel(count, lang)
 }

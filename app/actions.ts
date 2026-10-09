@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { answerCaregiverQuestion, parseDischargeText } from '@/lib/ai'
-import { isPatientId } from '@/lib/plan'
+import { isPatientId, normalizeDischargeText } from '@/lib/plan'
 import type { AssistantFacts, Lang, ParseResult, Prefs, SavePatientInput } from '@/lib/types'
 import {
   beginHospitalCheckout,
@@ -34,7 +34,7 @@ export async function extractUploadAction(
     const { extractText } = await import('unpdf')
     const extracted = await extractText(new Uint8Array(await file.arrayBuffer()), { mergePages: true })
     const raw = Array.isArray(extracted.text) ? extracted.text.join('\n') : String(extracted.text || '')
-    const text = raw.replace(/--\s*\d+\s+of\s+\d+\s*--/g, '\n').trim().slice(0, 20000)
+    const text = normalizeDischargeText(raw.replace(/--\s*\d+\s+of\s+\d+\s*--/g, '\n').trim()).slice(0, 20000)
     if (!text) return { error: 'No text found in that PDF.' }
     return { text, parsed: await parseDischargeText(text) }
   } catch {

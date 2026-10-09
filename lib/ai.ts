@@ -1,4 +1,4 @@
-import { answerQuestion, clampInt, newId, parseDischarge } from './plan'
+import { answerQuestion, clampInt, mergeParseResults, newId, normalizeDischargeText, parseDischarge } from './plan'
 import type { AssistantFacts, Lang, Medication, ParseResult } from './types'
 
 const MODEL = process.env.CLAUDE_MODEL?.trim() || 'claude-haiku-5-5'
@@ -91,9 +91,6 @@ export function dischargeFromModel(value: unknown): ParseResult {
   const caregiverName = textField(record.caregiverName, 80)
   const doctorName = textField(record.doctorName, 80)
   const identity = Boolean(name || caregiverName || doctorName || textField(record.caregiverPhone, 30))
-  if (!medications.length && (identity || physicalTherapy || equipment.length)) {
-    warnings.push('No medication doses were in the document. Add each medicine before submitting.')
-  }
   if (!medications.length && !physicalTherapy && !equipment.length && !identity) {
     return {
       medications: [],
@@ -137,7 +134,7 @@ async function callClaude(note: string, key: string): Promise<ParseResult> {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 1500,
+      max_tokens: 2500,
       system: INSTRUCTIONS,
       messages: [{ role: 'user', content: note }],
     }),
@@ -261,48 +258,50 @@ export async function answerCaregiverQuestion(
   }
   const key = (process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY)?.trim()
   if (!key) {
-    const fallbackLang = lang === 'es' ? 'es' : 'en'
-    const local = answerQuestion(q, facts, fallbackLang)
-    const prefix =
-      lang !== 'en' && lang !== 'es'
-        ? 'No AI key is set; answering in English from the chart. '
-        : ''
-    return limitSentences(prefix + local, 3)
+    return limitSentences(answerQuestion(q, facts, lang), 3)
   }
   try {
     return await callClaudeVoice(facts, q, lang, key)
   } catch {
-    const fallbackLang = lang === 'es' ? 'es' : 'en'
-    const local = answerQuestion(q, facts, fallbackLang)
-    return limitSentences(
+    const local = answerQuestion(q, facts, lang)
+    const prefix =
       lang === 'es'
-        ? `No pude contactar a Claude. ${local}`
+        ? 'No pude contactar a Claude. '
         : lang === 'fr'
-          ? `Claude est indisponible. ${local}`
-          : `Claude could not be reached. ${local}`,
-      3,
-    )
+          ? 'Claude est indisponible. '
+          : lang === 'zh'
+            ? '无法连接 Claude。'
+            : lang === 'vi'
+              ? 'Không kết nối được Claude. '
+              : lang === 'ar'
+                ? 'تعذّر الاتصال بـ Claude. '
+                : 'Claude could not be reached. '
+    return limitSentences(prefix + local, 3)
   }
 }
 
 export async function parseDischargeText(note: string): Promise<ParseResult> {
-  const text = note.trim().slice(0, 20000)
+  const text = normalizeDischargeText(note.trim().slice(0, 20000))
   if (!text) {
     return { medications: [], physicalTherapy: '', equipment: [], warnings: [], error: 'No text found in that document.' }
   }
+  const local = parseDischarge(text)
   const key = (process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_API_KEY)?.trim()
   if (!key) {
-    return withWarning(parseDischarge(text), 'No Claude API key is set, so the built-in reader was used.')
+    return withWarning(local, 'No Claude API key is set, so the built-in reader was used.')
   }
   try {
     const modeled = await callClaude(text, key)
-    if (useful(modeled)) return modeled
-    const fallback = parseDischarge(text)
-    if (useful(fallback)) {
-      return withWarning(fallback, 'The model did not find a plan, so the built-in reader was used.')
+    const merged = mergeParseResults(modeled, local)
+    if (useful(merged)) {
+      if (!useful(modeled) && useful(local)) {
+        return withWarning(merged, 'The model did not find a complete plan, so missing fields were filled from the built-in reader.')
+      }
+      if (!useful(local) && useful(modeled)) return merged
+      return merged
     }
-    return modeled.error ? modeled : fallback
+    return modeled.error ? modeled : local
   } catch {
-    return withWarning(parseDischarge(text), 'Claude could not be reached, so the built-in reader was used.')
+    return withWarning(local, 'Claude could not be reached, so the built-in reader was used.')
   }
 }

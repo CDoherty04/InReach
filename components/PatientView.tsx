@@ -4,7 +4,7 @@ import { respondAction } from '@/app/actions'
 import { usePatientLang } from '@/components/LangContext'
 import { SubmitButton } from '@/components/SubmitButton'
 import { GRANTS } from '@/lib/plan'
-import { patientCopy, patientSubtitle, taskQuestion, timesPerDay } from '@/lib/patient-copy'
+import { patientCopy, patientSubtitle, taskQuestion, taskStamp, timesPerDay } from '@/lib/patient-copy'
 import type { PatientPageData, TaskView } from '@/lib/types'
 
 function TaskRespond({
@@ -38,12 +38,25 @@ function TaskRespond({
   )
 }
 
-function TaskCard({ task, patientId, med = false }: { task: TaskView; patientId: string; med?: boolean }) {
+function TaskCard({
+  task,
+  patientId,
+  patientName,
+  doctorName,
+  med = false,
+}: {
+  task: TaskView
+  patientId: string
+  patientName: string
+  doctorName: string
+  med?: boolean
+}) {
   const lang = usePatientLang()
+  const names = { patientName, doctorName }
   return (
     <article className={task.overdue ? 'task overdue' : 'task'}>
-      <p className="hint">{task.stampEn}</p>
-      <p className="question">{taskQuestion(lang, task)}</p>
+      <p className="hint">{taskStamp(lang, task.scheduledFor)}</p>
+      <p className="question">{taskQuestion(lang, task, names)}</p>
       {task.response ? (
         <p className={task.response === 'yes' ? 'ok' : 'warn'}>
           {task.response === 'yes' ? patientCopy(lang, 'answeredYes') : patientCopy(lang, 'answeredNo')}
@@ -77,7 +90,14 @@ export function PatientView({ data }: { data: PatientPageData }) {
         <section aria-labelledby="open-heading">
           <h2 id="open-heading">{patientCopy(lang, 'rightNow')}</h2>
           {data.openMeds.map((task) => (
-            <TaskCard key={task.id} task={task} patientId={data.id} med />
+            <TaskCard
+              key={task.id}
+              task={task}
+              patientId={data.id}
+              patientName={data.name}
+              doctorName={data.doctorName}
+              med
+            />
           ))}
         </section>
       ) : null}
@@ -85,7 +105,7 @@ export function PatientView({ data }: { data: PatientPageData }) {
       {data.verify?.sentAt && !data.verify.response ? (
         <section className="card" aria-labelledby="doctor-heading">
           <h2 id="doctor-heading">{patientCopy(lang, 'confirmDoctor')}</h2>
-          <TaskCard task={data.verify} patientId={data.id} />
+          <TaskCard task={data.verify} patientId={data.id} patientName={data.name} doctorName={data.doctorName} />
         </section>
       ) : null}
 

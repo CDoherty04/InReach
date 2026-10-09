@@ -6,9 +6,8 @@ import {
   buildTasks,
   cardError,
   defaultPrefs,
-  englishSms,
+  reminderSms,
   formatStamp,
-  formatWhen,
   isPatientId,
   patientPath,
   presentTask,
@@ -221,7 +220,8 @@ function viewTask(task: TaskDoc, patient: PatientDoc, now: Date): TaskView {
 }
 
 function textBody(patient: PatientDoc, task: TaskDoc): string {
-  return englishSms({
+  const lang = patient.prefs?.lang ?? 'en'
+  return reminderSms(lang, {
     caregiverName: patient.caregiverName,
     patientName: patient.name,
     doctorName: patient.doctorName,
@@ -229,7 +229,7 @@ function textBody(patient: PatientDoc, task: TaskDoc): string {
     kind: task.kind,
     medName: task.medName,
     href: `${baseUrl()}${patientPath(patient._id)}`,
-    whenLabel: formatWhen(task.scheduledFor, 'en'),
+    scheduledFor: task.scheduledFor,
   })
 }
 

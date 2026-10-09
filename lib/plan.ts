@@ -1,4 +1,4 @@
-import type { Medication, ParseResult, PlanFields, Prefs, TaskDraft, TaskView } from './types'
+import type { Lang, Medication, ParseResult, PlanFields, Prefs, TaskDraft, TaskView } from './types'
 
 export const ANNUAL_RATE_CENTS = 500000
 
@@ -19,8 +19,15 @@ const CLOCK: Record<number, number[]> = {
 
 const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const MONTHS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+const MONTHS_FR = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+const MONTHS_VI = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
+const MONTHS_AR = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر']
 const WEEKDAYS_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const WEEKDAYS_ES = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+const WEEKDAYS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
+const WEEKDAYS_ZH = ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']
+const WEEKDAYS_VI = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy']
+const WEEKDAYS_AR = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
 
 const ES_DRUG: Record<string, string> = {
   ibuprofen: 'ibuprofeno',
@@ -29,7 +36,9 @@ const ES_DRUG: Record<string, string> = {
 }
 
 const MED_LINE =
-  /^(.+?)\s*\|\s*(.+?)\s*\|\s*qty\s+(\d+)\s*\|\s*every\s+(\d+)\s*hours?\s*\|\s*(\d+)\s*days?$/i
+  /^(.+?)\s*\|\s*([^|]+?)\s*\|\s*qty\s+(\d+)\s*\|\s*every\s+(\d+)\s*hours?\s*\|\s*(\d+)\s*days?\s*$/i
+const MED_LINE_GLOBAL =
+  /(?:^|[\n•\-–—]\s*)(.+?)\s*\|\s*([^|]+?)\s*\|\s*qty\s+(\d+)\s*\|\s*every\s+(\d+)\s*hours?\s*\|\s*(\d+)\s*days?/gi
 
 export function newId(): string {
   return globalThis.crypto.randomUUID()
@@ -179,41 +188,101 @@ export function dischargeMorningAnchor(now = new Date()): Date {
   return discharge
 }
 
-export function formatClock(hour: number, minute: number, lang: 'en' | 'es'): string {
-  const ampm = hour >= 12 ? (lang === 'es' ? 'p.m.' : 'PM') : lang === 'es' ? 'a.m.' : 'AM'
+export function formatClock(hour: number, minute: number, lang: Lang = 'en'): string {
   const hour12 = hour % 12 === 0 ? 12 : hour % 12
   const minutes = String(minute).padStart(2, '0')
-  return `${hour12}:${minutes} ${ampm}`
+  if (lang === 'zh') {
+    const period = hour >= 12 ? '下午' : '上午'
+    return `${period}${hour12}:${minutes}`
+  }
+  if (lang === 'ar') {
+    return `${hour12}:${minutes} ${hour >= 12 ? 'م' : 'ص'}`
+  }
+  const ampm =
+    hour >= 12
+      ? lang === 'es'
+        ? 'p.m.'
+        : lang === 'fr'
+          ? ''
+          : 'PM'
+      : lang === 'es'
+        ? 'a.m.'
+        : lang === 'fr'
+          ? ''
+          : 'AM'
+  if (lang === 'fr') {
+    return `${hour12} h ${minutes}`
+  }
+  return `${hour12}:${minutes} ${ampm}`.trim()
 }
 
-export function formatWhen(date: Date, lang: 'en' | 'es'): string {
+export function formatWhen(date: Date, lang: Lang = 'en'): string {
   const parts = chicagoParts(date)
   const weekday = weekdayIndex(parts.year, parts.month, parts.day)
   const time = formatClock(parts.hour, parts.minute, lang)
-  if (lang === 'es') {
-    return `${time} del ${WEEKDAYS_ES[weekday]}, ${parts.day} ${MONTHS_ES[parts.month - 1]}`
+  switch (lang) {
+    case 'es':
+      return `${time} del ${WEEKDAYS_ES[weekday]}, ${parts.day} ${MONTHS_ES[parts.month - 1]}`
+    case 'fr':
+      return `${time}, ${WEEKDAYS_FR[weekday]} ${parts.day} ${MONTHS_FR[parts.month - 1]}`
+    case 'zh':
+      return `${WEEKDAYS_ZH[weekday]} ${parts.month}月${parts.day}日 ${time}`
+    case 'vi':
+      return `${time}, ${WEEKDAYS_VI[weekday]}, ngày ${parts.day} tháng ${MONTHS_VI[parts.month - 1]}`
+    case 'ar':
+      return `${time}، ${WEEKDAYS_AR[weekday]} ${parts.day} ${MONTHS_AR[parts.month - 1]}`
+    default:
+      return `${time} on ${WEEKDAYS_EN[weekday]}, ${MONTHS_EN[parts.month - 1]} ${parts.day}`
   }
-  return `${time} on ${WEEKDAYS_EN[weekday]}, ${MONTHS_EN[parts.month - 1]} ${parts.day}`
 }
 
-export function formatStamp(date: Date): string {
+export function formatStamp(date: Date, lang: Lang = 'en'): string {
   const parts = chicagoParts(date)
-  return `${MONTHS_EN[parts.month - 1]} ${parts.day}, ${formatClock(parts.hour, parts.minute, 'en')}`
+  if (lang === 'zh') return `${parts.month}月${parts.day}日 ${formatClock(parts.hour, parts.minute, lang)}`
+  if (lang === 'es') return `${parts.day} ${MONTHS_ES[parts.month - 1]}, ${formatClock(parts.hour, parts.minute, lang)}`
+  if (lang === 'fr') return `${parts.day} ${MONTHS_FR[parts.month - 1]}, ${formatClock(parts.hour, parts.minute, lang)}`
+  if (lang === 'vi') return `${parts.day}/${parts.month}, ${formatClock(parts.hour, parts.minute, lang)}`
+  if (lang === 'ar') return `${parts.day} ${MONTHS_AR[parts.month - 1]}، ${formatClock(parts.hour, parts.minute, lang)}`
+  return `${MONTHS_EN[parts.month - 1]} ${parts.day}, ${formatClock(parts.hour, parts.minute, lang)}`
 }
 
-export function timesPerDayLabel(count: number, lang: 'en' | 'es'): string {
+export function timesPerDayLabel(count: number, lang: Lang = 'en'): string {
   const n = clampInt(count, 1, 6)
-  if (lang === 'es') return n === 1 ? '1 vez al día' : `${n} veces al día`
-  return n === 1 ? '1 time a day' : `${n} times a day`
+  switch (lang) {
+    case 'es':
+      return n === 1 ? '1 vez al día' : `${n} veces al día`
+    case 'fr':
+      return n === 1 ? '1 fois par jour' : `${n} fois par jour`
+    case 'zh':
+      return `每天 ${n} 次`
+    case 'vi':
+      return n === 1 ? '1 lần mỗi ngày' : `${n} lần mỗi ngày`
+    case 'ar':
+      return n === 1 ? 'مرة واحدة في اليوم' : `${n} مرات في اليوم`
+    default:
+      return n === 1 ? '1 time a day' : `${n} times a day`
+  }
 }
 
-export function durationLabel(days: number, lang: 'en' | 'es'): string {
+export function durationLabel(days: number, lang: Lang = 'en'): string {
   const n = clampInt(days, 1, 30)
-  if (lang === 'es') return n === 1 ? '1 día' : `${n} días`
-  return n === 1 ? '1 day' : `${n} days`
+  switch (lang) {
+    case 'es':
+      return n === 1 ? '1 día' : `${n} días`
+    case 'fr':
+      return n === 1 ? '1 jour' : `${n} jours`
+    case 'zh':
+      return `${n} 天`
+    case 'vi':
+      return n === 1 ? '1 ngày' : `${n} ngày`
+    case 'ar':
+      return n === 1 ? 'يوم واحد' : `${n} أيام`
+    default:
+      return n === 1 ? '1 day' : `${n} days`
+  }
 }
 
-export function clockPreview(frequency: number, lang: 'en' | 'es' = 'en'): string {
+export function clockPreview(frequency: number, lang: Lang = 'en'): string {
   const hours = CLOCK[clampInt(frequency, 1, 6)]
   const labels = hours.map((hour) => formatClock(hour, 0, lang))
   const join = lang === 'es' ? ' y ' : ' and '
@@ -224,21 +293,55 @@ export function clockPreview(frequency: number, lang: 'en' | 'es' = 'en'): strin
   return lang === 'es' ? `${head} y ${tail}` : `${head}, and ${tail}`
 }
 
-function drugName(name: string, lang: 'en' | 'es'): string {
+function drugName(name: string, lang: Lang): string {
   const lower = name.trim().toLowerCase()
   if (lang === 'es' && ES_DRUG[lower]) return ES_DRUG[lower]
   return lower
 }
 
-export function medQuestion(medName: string, whenLabel: string, lang: 'en' | 'es'): string {
+export function medQuestion(medName: string, whenLabel: string, lang: Lang): string {
   const name = drugName(medName, lang)
-  if (lang === 'es') return `¿Ya tomó su ${name} a las ${whenLabel}?`
-  return `Have they taken their ${name} at ${whenLabel}?`
+  switch (lang) {
+    case 'es':
+      return `¿Ya tomó su ${name} a las ${whenLabel}?`
+    case 'fr':
+      return `A-t-il/elle pris son ${name} à ${whenLabel} ?`
+    case 'zh':
+      return `是否在 ${whenLabel} 服用了 ${name}？`
+    case 'vi':
+      return `Họ đã uống ${name} lúc ${whenLabel} chưa?`
+    case 'ar':
+      return `هل تناول ${name} في ${whenLabel}؟`
+    default:
+      return `Have they taken their ${name} at ${whenLabel}?`
+  }
 }
 
-export function verifyQuestion(doctorName: string, patientName: string, lang: 'en' | 'es'): string {
-  if (lang === 'es') return `¿${doctorName} es quien dio el alta de ${patientName}?`
-  return `Is ${doctorName} the doctor for ${patientName}'s discharge?`
+export function verifyQuestion(doctorName: string, patientName: string, lang: Lang): string {
+  switch (lang) {
+    case 'es':
+      return `¿${doctorName} es quien dio el alta de ${patientName}?`
+    case 'fr':
+      return `${doctorName} est-il le médecin de sortie de ${patientName} ?`
+    case 'zh':
+      return `${doctorName} 是 ${patientName} 的出院医生吗？`
+    case 'vi':
+      return `${doctorName} có phải bác sĩ cho ${patientName} xuất viện không?`
+    case 'ar':
+      return `هل ${doctorName} هو طبيب خروج ${patientName} من المستشفى؟`
+    default:
+      return `Is ${doctorName} the doctor for ${patientName}'s discharge?`
+  }
+}
+
+export function taskQuestionForLang(
+  lang: Lang,
+  task: { kind: 'verify' | 'med'; medName: string | null; scheduledFor: string },
+  names: { patientName: string; doctorName: string },
+): string {
+  if (task.kind === 'verify') return verifyQuestion(names.doctorName, names.patientName, lang)
+  const when = formatWhen(new Date(task.scheduledFor), lang)
+  return medQuestion(task.medName || 'medication', when, lang)
 }
 
 export function doseInstants(frequencyPerDay: number, durationDays: number, discharge: Date): Date[] {
@@ -336,6 +439,67 @@ export function presentTask(
   }
 }
 
+const SMS_PAGE: Record<Lang, string> = {
+  en: 'Patient page',
+  es: 'Página del paciente',
+  fr: 'Page du patient',
+  zh: '患者页面',
+  vi: 'Trang bệnh nhân',
+  ar: 'صفحة المريض',
+}
+
+export function reminderSms(
+  lang: Lang,
+  input: {
+    caregiverName: string
+    patientName: string
+    doctorName: string
+    hospitalName: string
+    kind: 'verify' | 'med'
+    medName: string | null
+    href: string
+    scheduledFor: Date
+  },
+): string {
+  const who = `${input.caregiverName} · ${input.patientName}`
+  const when = formatWhen(input.scheduledFor, lang)
+  const header =
+    lang === 'es'
+      ? `InReach — mensaje para ${who}`
+      : lang === 'fr'
+        ? `InReach — message pour ${who}`
+        : lang === 'zh'
+          ? `InReach — ${who} 的提醒`
+          : lang === 'vi'
+            ? `InReach — tin nhắn cho ${who}`
+            : lang === 'ar'
+              ? `InReach — رسالة إلى ${who}`
+              : `InReach — text for ${who}`
+  const lines = [header, '']
+  if (input.kind === 'verify') {
+    lines.push(verifyQuestion(input.doctorName, input.patientName, lang))
+    if (lang === 'es') {
+      lines.push(`${input.doctorName} en ${input.hospitalName} pidió ayuda tras el alta de ${input.patientName}.`)
+    } else if (lang === 'fr') {
+      lines.push(`${input.doctorName} à ${input.hospitalName} a demandé de l’aide après la sortie de ${input.patientName}.`)
+    } else if (lang === 'zh') {
+      lines.push(`${input.hospitalName} 的 ${input.doctorName} 在 ${input.patientName} 出院后请求协助。`)
+    } else if (lang === 'vi') {
+      lines.push(`${input.doctorName} tại ${input.hospitalName} cần hỗ trợ sau khi ${input.patientName} xuất viện.`)
+    } else if (lang === 'ar') {
+      lines.push(`طلب ${input.doctorName} في ${input.hospitalName} المساعدة بعد خروج ${input.patientName}.`)
+    } else {
+      lines.push(
+        `${input.doctorName} at ${input.hospitalName} asked us to help after ${input.patientName}'s discharge. Confirm this is the right doctor on their page.`,
+      )
+    }
+  } else {
+    lines.push(medQuestion(input.medName || 'medication', when, lang))
+  }
+  lines.push('', `${SMS_PAGE[lang]}: ${input.href}`)
+  return lines.join('\n')
+}
+
 export function englishSms(input: {
   caregiverName: string
   patientName: string
@@ -355,7 +519,7 @@ export function englishSms(input: {
   } else {
     lines.push(medQuestion(input.medName || 'medication', input.whenLabel, 'en'))
   }
-  lines.push('', `Patient page: ${input.href}`)
+  lines.push('', `${SMS_PAGE.en}: ${input.href}`)
   return lines.join('\n')
 }
 
@@ -399,6 +563,118 @@ const CHART_LABELS = [
   'City',
   'Status',
 ]
+
+/** PDF extractors often glue section headers and chart labels onto one line; reopen structure first. */
+export function normalizeDischargeText(note: string): string {
+  let text = note.replace(/\u0000/g, '').replace(/\r\n?/g, '\n').trim()
+  if (!text) return text
+
+  for (const header of ['Medications', 'Physical therapy', 'Physical Therapy', 'Equipment']) {
+    const escaped = header.replace(/ /g, '\\s+')
+    text = text.replace(new RegExp(`(\\S)\\s+\\b(${escaped})\\b\\s*:?\\s*`, 'gi'), `$1\n$2\n`)
+  }
+
+  for (const label of CHART_LABELS) {
+    const escaped = label.replace(/ /g, '\\s+')
+    text = text.replace(new RegExp(`(?<![\\n])\\s+\\b(${escaped})\\s*:`, 'gi'), `\n$1:`)
+  }
+
+  return text.replace(/\n{3,}/g, '\n\n')
+}
+
+export function mergeParseResults(primary: ParseResult, secondary: ParseResult): ParseResult {
+  const pick = (a?: string, b?: string) => {
+    const left = a?.trim()
+    const right = b?.trim()
+    return left || right || undefined
+  }
+  const medications =
+    primary.medications.length >= secondary.medications.length ? primary.medications : secondary.medications
+  const physicalTherapy = primary.physicalTherapy.trim() || secondary.physicalTherapy.trim()
+  const equipment = primary.equipment.length >= secondary.equipment.length ? primary.equipment : secondary.equipment
+  const warnings = [...new Set([...primary.warnings, ...secondary.warnings])]
+  const name = pick(primary.name, secondary.name)
+  const caregiverName = pick(primary.caregiverName, secondary.caregiverName)
+  const doctorName = pick(primary.doctorName, secondary.doctorName)
+  const caregiverPhone = pick(primary.caregiverPhone, secondary.caregiverPhone)
+  const identity = Boolean(name || caregiverName || doctorName || caregiverPhone)
+  if (!medications.length && !physicalTherapy && !equipment.length && !identity) {
+    return {
+      medications: [],
+      physicalTherapy: '',
+      equipment: [],
+      warnings,
+      error: primary.error || secondary.error || 'This document had no medications, therapy, or equipment.',
+    }
+  }
+  return {
+    medications,
+    physicalTherapy,
+    equipment,
+    warnings,
+    name,
+    phone: pick(primary.phone, secondary.phone),
+    caregiverName,
+    caregiverPhone,
+    doctorName,
+    hospitalName: pick(primary.hospitalName, secondary.hospitalName),
+    city: pick(primary.city, secondary.city),
+    procedure: pick(primary.procedure, secondary.procedure),
+  }
+}
+
+function leadName(note: string): string | undefined {
+  for (const raw of note.split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    if (/^(medications?|physical therapy|equipment|patient information|subjective|objective|assessment)\b/i.test(line)) {
+      continue
+    }
+    if (/^[^:]+:\s*\S/.test(line)) continue
+    if (/^[\p{L}'’.-]+(?:\s+[\p{L}'’.-]+){0,3}$/u.test(line) && line.length <= 80) return line
+    const tokens = line.split(/\s+/)
+    const parts: string[] = []
+    for (const token of tokens) {
+      if (!/^[\p{Lu}][\p{L}'’\-.,]*$/u.test(token)) break
+      parts.push(token.replace(/[.,]+$/, ''))
+      if (parts.length === 2 && tokens.length > 3) return parts.join(' ')
+      if (parts.length >= 4) break
+    }
+    if (parts.length >= 1 && parts.length <= 4) return parts.join(' ')
+    break
+  }
+  return undefined
+}
+
+function cityFromNarrative(note: string): string | undefined {
+  const homeTo = note.match(/\bdischarge home to\s+([^.;\n]+)/i)
+  if (homeTo) return homeTo[1].replace(/\s+/g, ' ').trim()
+  const homeIn = note.match(/\bhome in\s+(.+?)\s+after\b/i)
+  if (homeIn) return homeIn[1].replace(/\s+/g, ' ').trim()
+  return undefined
+}
+
+function hospitalFromNarrative(note: string): string | undefined {
+  const match = note.match(/\b(?:at|from)\s+([A-Z][A-Za-z0-9&'’\-\s]+Hospital\b[^.;\n]*)/)
+  return match?.[1]?.replace(/\s+/g, ' ').trim()
+}
+
+function extractPipeMedications(note: string, warnings: string[]): Medication[] {
+  const medications: Medication[] = []
+  const seen = new Set<string>()
+  for (const match of note.matchAll(MED_LINE_GLOBAL)) {
+    const name = match[1].trim().replace(/^[-–—•]\s*/, '')
+    const line = `${name} | ${match[2].trim()} | qty ${match[3]} | every ${match[4]} hours | ${match[5]} days`
+    const parsed = parseMedicationLine(line)
+    if ('error' in parsed) continue
+    const key = `${parsed.med.name}:${parsed.med.dose}`.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    medications.push(parsed.med)
+    if (parsed.warning) warnings.push(parsed.warning)
+  }
+  return medications
+}
 
 function chartFields(note: string): Record<string, string> {
   const found: { label: string; end: number; index: number }[] = []
@@ -446,13 +722,14 @@ function narrativePlan(note: string): { physicalTherapy: string; equipment: stri
 }
 
 export function parseDischarge(note: string): ParseResult {
+  const normalized = normalizeDischargeText(note)
   const warnings: string[] = []
   const medications: Medication[] = []
   const therapy: string[] = []
   const equipment: string[] = []
   let section: 'none' | 'meds' | 'pt' | 'eq' = 'none'
 
-  for (const raw of note.split('\n')) {
+  for (const raw of normalized.split('\n')) {
     const line = raw.trim()
     if (!line) continue
     if (/^medications?\s*:?$/i.test(line)) {
@@ -469,36 +746,39 @@ export function parseDischarge(note: string): ParseResult {
     }
     const item = line.replace(/^[-*•]\s*/, '').trim()
     if (section === 'meds') {
+      if (!/\|\s*qty\s+\d+/i.test(item)) continue
       const parsed = parseMedicationLine(item)
-      if ('error' in parsed) warnings.push(parsed.error)
-      else {
-        medications.push(parsed.med)
-        if (parsed.warning) warnings.push(parsed.warning)
-      }
+      if ('error' in parsed) continue
+      medications.push(parsed.med)
+      if (parsed.warning) warnings.push(parsed.warning)
     } else if (section === 'pt') {
       therapy.push(item)
     } else if (section === 'eq' && item) {
-      equipment.push(item)
+      for (const piece of item.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean)) {
+        equipment.push(piece)
+      }
     }
   }
 
-  const chart = chartFields(note)
-  const narrative = narrativePlan(note)
+  const piped = extractPipeMedications(normalized, warnings)
+  if (piped.length >= medications.length) {
+    medications.length = 0
+    medications.push(...piped)
+  }
+
+  const chart = chartFields(normalized)
+  const narrative = narrativePlan(normalized)
   const physicalTherapy = therapy.join(' ') || narrative.physicalTherapy
   const listedEquipment = equipment.length ? equipment : narrative.equipment
-  const name = chart.name
+  const name = chart.name || leadName(normalized)
   const caregiverName = chart['primary caregiver'] ? caregiverFromChart(chart['primary caregiver']) : undefined
   const caregiverPhone = chart['caregiver phone']
   const phone = chart['patient phone'] || chart['patient mobile']
   const doctorName = chart.author || chart.attending || chart.physician || chart.doctor
-  const hospitalName = chart.hospital
-  const city = chart.city
+  const hospitalName = chart.hospital || hospitalFromNarrative(normalized)
+  const city = chart.city || cityFromNarrative(normalized)
   const procedure = chart.procedure
   const identity = Boolean(name || caregiverName || doctorName || caregiverPhone)
-
-  if (!medications.length && (identity || physicalTherapy || listedEquipment.length)) {
-    warnings.push('No medication doses were in the document. Add each medicine before submitting.')
-  }
 
   if (!medications.length && !physicalTherapy && !listedEquipment.length) {
     return {
@@ -644,6 +924,44 @@ function norm(value: string): string {
   return value.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '')
 }
 
+function chartNames(facts: { name: string; doctorName: string }) {
+  return { patientName: facts.name, doctorName: facts.doctorName }
+}
+
+function perDoseLabel(lang: Lang): string {
+  switch (lang) {
+    case 'es':
+      return 'por toma'
+    case 'fr':
+      return 'par prise'
+    case 'zh':
+      return '每次'
+    case 'vi':
+      return 'mỗi lần'
+    case 'ar':
+      return 'لكل جرعة'
+    default:
+      return 'per dose'
+  }
+}
+
+function forDurationLabel(lang: Lang): string {
+  switch (lang) {
+    case 'es':
+      return 'por'
+    case 'fr':
+      return 'pendant'
+    case 'zh':
+      return '共'
+    case 'vi':
+      return 'trong'
+    case 'ar':
+      return 'لمدة'
+    default:
+      return 'for'
+  }
+}
+
 export function answerQuestion(
   question: string,
   facts: {
@@ -657,10 +975,25 @@ export function answerQuestion(
     medications: Medication[]
     tasks: TaskView[]
   },
-  lang: 'en' | 'es',
+  lang: Lang,
 ): string {
   const q = norm(question)
-  if (!q) return lang === 'es' ? 'Escriba o dicte una pregunta.' : 'Type or dictate a question.'
+  if (!q) {
+    switch (lang) {
+      case 'es':
+        return 'Escriba o dicte una pregunta.'
+      case 'fr':
+        return 'Saisissez ou dictez une question.'
+      case 'zh':
+        return '请输入或说出您的问题。'
+      case 'vi':
+        return 'Hãy nhập hoặc nói câu hỏi.'
+      case 'ar':
+        return 'اكتب أو انطق سؤالاً.'
+      default:
+        return 'Type or dictate a question.'
+    }
+  }
 
   const med = facts.medications.find((item) => {
     const names = [norm(item.name), ES_DRUG[norm(item.name)]].filter(Boolean)
@@ -669,31 +1002,76 @@ export function answerQuestion(
     return names.some((name) => q.includes(name))
   })
   if (med) {
-    const regimen =
-      lang === 'es'
-        ? `${med.name} ${med.dose}: ${med.quantity} por toma, ${timesPerDayLabel(med.frequencyPerDay, 'es')}, por ${durationLabel(med.durationDays, 'es')}.`
-        : `${med.name} ${med.dose}: ${med.quantity} per dose, ${timesPerDayLabel(med.frequencyPerDay, 'en')}, for ${durationLabel(med.durationDays, 'en')}.`
+    const regimen = `${med.name} ${med.dose}: ${med.quantity} ${perDoseLabel(lang)}, ${timesPerDayLabel(med.frequencyPerDay, lang)}, ${forDurationLabel(lang)} ${durationLabel(med.durationDays, lang)}.`
+    const names = chartNames(facts)
     const related = facts.tasks.filter((task) => task.kind === 'med' && task.medName === med.name)
     const open = related.find((task) => task.sentAt && !task.response)
     if (open) {
-      const label = lang === 'es' ? 'Pregunta abierta' : 'Open question'
-      return `${regimen} ${label}: ${lang === 'es' ? open.questionEs : open.questionEn}`
+      const label =
+        lang === 'es'
+          ? 'Pregunta abierta'
+          : lang === 'fr'
+            ? 'Question en cours'
+            : lang === 'zh'
+              ? '待回答'
+              : lang === 'vi'
+                ? 'Câu hỏi đang mở'
+                : lang === 'ar'
+                  ? 'سؤال مفتوح'
+                  : 'Open question'
+      return `${regimen} ${label}: ${taskQuestionForLang(lang, open, names)}`
     }
     const upcoming = related.find((task) => !task.sentAt)
     if (upcoming) {
-      const label = lang === 'es' ? 'Próximo texto' : 'Next text'
-      return `${regimen} ${label}: ${lang === 'es' ? upcoming.questionEs : upcoming.questionEn}`
+      const label =
+        lang === 'es'
+          ? 'Próximo texto'
+          : lang === 'fr'
+            ? 'Prochain rappel'
+            : lang === 'zh'
+              ? '下次提醒'
+              : lang === 'vi'
+                ? 'Nhắc tiếp theo'
+                : lang === 'ar'
+                  ? 'التذكير التالي'
+                  : 'Next text'
+      return `${regimen} ${label}: ${taskQuestionForLang(lang, upcoming, names)}`
     }
     return regimen
   }
 
-  if (/(therap|ejercicio|fisio|\bpt\b|reposition|transfer|movimiento|girar)/.test(q)) {
-    const body = facts.physicalTherapy.trim() || (lang === 'es' ? 'No hay terapia en la hoja.' : 'No therapy is on the chart.')
-    return lang === 'es' ? `Terapia física: ${body}` : `Physical therapy: ${body}`
+  if (/(therap|ejercicio|fisio|\bpt\b|reposition|transfer|movimiento|girar|理疗|康复|vật lý)/.test(q)) {
+    const empty =
+      lang === 'es'
+        ? 'No hay terapia en la hoja.'
+        : lang === 'fr'
+          ? 'Pas de thérapie sur la fiche.'
+          : lang === 'zh'
+            ? '计划中没有理疗内容。'
+            : lang === 'vi'
+              ? 'Không có vật lý trị liệu trên bảng.'
+              : lang === 'ar'
+                ? 'لا يوجد علاج فيزيائي في المخطط.'
+                : 'No therapy is on the chart.'
+    const body = facts.physicalTherapy.trim() || empty
+    switch (lang) {
+      case 'es':
+        return `Terapia física: ${body}`
+      case 'fr':
+        return `Thérapie : ${body}`
+      case 'zh':
+        return `物理治疗：${body}`
+      case 'vi':
+        return `Vật lý trị liệu: ${body}`
+      case 'ar':
+        return `العلاج الفيزيائي: ${body}`
+      default:
+        return `Physical therapy: ${body}`
+    }
   }
 
   const equipmentHit =
-    /(equipment|wheelchair|cushion|bed|equipo|silla|cama|colchon)/.test(q) ||
+    /(equipment|wheelchair|cushion|bed|equipo|silla|cama|colchon|设备|轮椅|thiết bị|معدات)/.test(q) ||
     facts.equipment.some((item) =>
       norm(item)
         .split(/[^a-z0-9]+/)
@@ -705,22 +1083,65 @@ export function answerQuestion(
       ? facts.equipment.join(', ')
       : lang === 'es'
         ? 'No hay equipo en la hoja.'
-        : 'No equipment is on the chart.'
-    return lang === 'es' ? `Equipo: ${list}` : `Equipment: ${list}`
+        : lang === 'fr'
+          ? 'Pas d’équipement sur la fiche.'
+          : lang === 'zh'
+            ? '计划中没有设备。'
+            : lang === 'vi'
+              ? 'Không có thiết bị trên bảng.'
+              : lang === 'ar'
+                ? 'لا توجد معدات في المخطط.'
+                : 'No equipment is on the chart.'
+    switch (lang) {
+      case 'es':
+        return `Equipo: ${list}`
+      case 'fr':
+        return `Équipement : ${list}`
+      case 'zh':
+        return `设备：${list}`
+      case 'vi':
+        return `Thiết bị: ${list}`
+      case 'ar':
+        return `المعدات: ${list}`
+      default:
+        return `Equipment: ${list}`
+    }
   }
 
   const doctorToken = norm(facts.doctorName).split(' ').filter((part) => part.length > 2).at(-1) || ''
-  if (/(doctor|hospital|medico|alta|discharge)/.test(q) || (doctorToken && q.includes(doctorToken))) {
-    return lang === 'es'
-      ? `${facts.doctorName} en ${facts.hospitalName} envió este plan para ${facts.name}.`
-      : `${facts.doctorName} at ${facts.hospitalName} submitted this plan for ${facts.name}.`
+  if (/(doctor|hospital|medico|alta|discharge|医生|bác sĩ|طبيب)/.test(q) || (doctorToken && q.includes(doctorToken))) {
+    switch (lang) {
+      case 'es':
+        return `${facts.doctorName} en ${facts.hospitalName} envió este plan para ${facts.name}.`
+      case 'fr':
+        return `${facts.doctorName} à ${facts.hospitalName} a envoyé ce plan pour ${facts.name}.`
+      case 'zh':
+        return `${facts.hospitalName} 的 ${facts.doctorName} 为 ${facts.name} 提交了此计划。`
+      case 'vi':
+        return `${facts.doctorName} tại ${facts.hospitalName} đã gửi kế hoạch này cho ${facts.name}.`
+      case 'ar':
+        return `${facts.doctorName} في ${facts.hospitalName} أرسل هذا المخطط لـ ${facts.name}.`
+      default:
+        return `${facts.doctorName} at ${facts.hospitalName} submitted this plan for ${facts.name}.`
+    }
   }
 
-  if (/(summ|plan|what|que debo|qué debo|cuidad)/.test(q)) {
+  if (/(summ|plan|what|que debo|qué debo|cuidad|摘要|kế hoach|ملخص)/.test(q)) {
     return facts.summary
   }
 
-  return lang === 'es'
-    ? 'Puedo responder con esta hoja: medicamentos, terapia física, equipo o el médico. No doy consejos médicos nuevos.'
-    : "I can answer from this chart: medications, physical therapy, equipment, or the doctor. I don't give new medical advice."
+  switch (lang) {
+    case 'es':
+      return 'Puedo responder con esta hoja: medicamentos, terapia física, equipo o el médico. No doy consejos médicos nuevos.'
+    case 'fr':
+      return 'Je peux répondre d’après cette fiche : médicaments, thérapie, équipement ou médecin. Pas de nouveaux conseils médicaux.'
+    case 'zh':
+      return '我只能根据此计划回答：药物、理疗、设备或医生信息。不能提供新的医疗建议。'
+    case 'vi':
+      return 'Tôi trả lời theo bảng này: thuốc, vật lý trị liệu, thiết bị hoặc bác sĩ. Không đưa lời khuyên y tế mới.'
+    case 'ar':
+      return 'أجيب من هذا المخطط: الأدوية، العلاج، المعدات، أو الطبيب. لا أقدم نصائح طبية جديدة.'
+    default:
+      return "I can answer from this chart: medications, physical therapy, equipment, or the doctor. I don't give new medical advice."
+  }
 }
